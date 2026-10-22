@@ -52,8 +52,15 @@ class 运行记录:
             self.写(f"运行方式：{运行方式}")
         self.写("-" * 40)
 
+    观察者 = None   # 窗口版设置一个函数，用来实时显示每一步
+
     def 写(self, 文字):
         行 = f"[{datetime.now():%H:%M:%S}] {遮掩(str(文字))}"
+        if 运行记录.观察者:
+            try:
+                运行记录.观察者(self.模块名, 遮掩(str(文字)))
+            except Exception:
+                pass
         with open(self.文件夹 / "运行记录.txt", "a", encoding="utf-8") as f:
             f.write(行 + "\n")
 

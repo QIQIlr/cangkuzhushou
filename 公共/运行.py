@@ -30,7 +30,9 @@ def 载入模块(名):
         return None, 自动化错误(程序出错, f"模块文件“{名}.py”载入出错：{type(e).__name__}: {e}")
 
 
-def 运行模块们(名列表, 可见=False, 发送=True, 显示=True):
+def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登录=None, 回报=None):
+    """返回 {"结果们": [...], "消息": 发到飞书的全文, "飞书": (状态, 说明), "日志文件夹": 路径}。
+    回报(事件, 内容)：窗口版用来显示进度。事件有 开始模块 / 模块完成。"""
     from playwright.sync_api import sync_playwright
     开始 = datetime.now()
     方式 = ("可见窗口" if 可见 else "后台") + ("，发飞书" if 发送 else "，不发飞书")
@@ -42,6 +44,13 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True):
         if 显示:
             print(文字, flush=True)
 
+    def 通知(事件, 内容):
+        if 回报:
+            try:
+                回报(事件, 内容)
+            except Exception:
+                pass
+
     try:
         with sync_playwright() as p:
             浏览器 = 页面 = None
@@ -49,11 +58,12 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True):
             首个记录 = 主控 or 运行记录(名列表[0], 方式)
             try:
                 with 首个记录.步骤("打开 WMS 并检查登录"):
-                    浏览器, 页面 = 打开WMS(p, 可见=可见, 记录=首个记录)
+                    浏览器, 页面 = 打开WMS(p, 可见=可见, 记录=首个记录, 等待登录=等待登录)
             except 自动化错误 as e:
                 打开失败 = e
             for 序号, 名 in enumerate(名列表, 1):
                 打印(f"\n▶ [{序号}/{len(名列表)}] {名} ……")
+                通知("开始模块", (序号, len(名列表), 名))
                 模块, 载入错误 = 载入模块(名)
                 记录 = 首个记录 if (not 多个) else 运行记录(名, 方式)
                 模块开始 = datetime.now()
@@ -81,6 +91,7 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True):
                 if 模块 and hasattr(模块, "保存最近结果"):
                     模块.保存最近结果(结果)
                 打印(f"  {结果['状态']}" + (f"，数量 {结果['数量']}" if 结果.get("数量") is not None else ""))
+                通知("模块完成", (名, 结果))
                 清单.append([名, 模块, 记录, 结果, 模块开始])
             if 浏览器:
                 浏览器.close()
@@ -144,7 +155,8 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True):
     打印("=" * 40)
     打印(f"飞书：{发送状态}（{发送说明}）    总用时：{(datetime.now() - 开始).total_seconds():.0f} 秒")
     打印(f"日志：{(主控 or 清单[0][2]).文件夹}")
-    return [项[3] for 项 in 清单]
+    return {"结果们": [项[3] for 项 in 清单], "消息": 总消息, "飞书": (发送状态, 发送说明),
+            "日志文件夹": str((主控 or 清单[0][2]).文件夹)}
 
 
 def _通用失败(错误):

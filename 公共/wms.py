@@ -29,10 +29,26 @@ def _启动(p, 可见):
     return 浏览器, (浏览器.pages[0] if 浏览器.pages else 浏览器.new_page())
 
 
-def 打开WMS(p, 可见=False, 记录=None):
+def _命令行等待登录(次数):
+    """命令行版：提示后等人按回车。返回 True=说登录好了，False=没法等（没有人在）。"""
+    if 次数 == 2:
+        print("还没有检测到登录成功，请再试一次。", flush=True)
+    print("\n========================================", flush=True)
+    print("WMS 需要登录：请在弹出的 Chrome 窗口里登录，", flush=True)
+    print("登录完成后，回到这个窗口按回车键继续。", flush=True)
+    print("========================================", flush=True)
+    try:
+        input()
+        return True
+    except (EOFError, RuntimeError):
+        return False
+
+
+def 打开WMS(p, 可见=False, 记录=None, 等待登录=None):
     """打开自动化专用 Chrome，进入 WMS 首页。返回 (浏览器, 页面)。
     可见=False：后台运行，屏幕上不出现窗口（默认）。
-    掉线时会自动换成可见窗口，请人手动登录后继续。"""
+    掉线时会自动换成可见窗口，请人手动登录后继续。
+    等待登录：掉线时怎么等人登录（窗口版传入弹窗；不传就用命令行按回车）。"""
     浏览器, 页面 = _启动(p, 可见)
     if 记录:
         记录.页面 = 页面
@@ -51,23 +67,17 @@ def 打开WMS(p, 可见=False, 记录=None):
         if 记录:
             记录.页面 = 页面
         _登录状态(页面)
+    等待 = 等待登录 or _命令行等待登录
     for 次数 in (1, 2):
-        print("\n========================================", flush=True)
-        print("WMS 需要登录：请在弹出的 Chrome 窗口里登录，", flush=True)
-        print("登录完成后，回到这个窗口按回车键继续。", flush=True)
-        print("========================================", flush=True)
-        try:
-            input()
-        except EOFError:
+        if not 等待(次数):
             浏览器.close()
-            raise 自动化错误(需要登录, "WMS 已掉线，没有人在窗口前登录。")
+            raise 自动化错误(需要登录, "WMS 已掉线，没有完成登录。")
         if _登录状态(页面) == "已登录":
             print("已登录，继续。", flush=True)
             if 记录:
                 记录.写(f"    第{次数}次确认：已登录")
             return 浏览器, 页面
         if 次数 == 1:
-            print("还没有检测到登录成功，请再试一次。", flush=True)
             if 记录:
                 记录.写("    第1次确认：还没登录")
     浏览器.close()
