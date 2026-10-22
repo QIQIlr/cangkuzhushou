@@ -1,0 +1,11 @@
+【自动化共用设置】（这里不放账号、密码、Webhook）
+
+WMS 网址：https://wms-admin.rakufun.jp/
+包裹管理页面：https://wms-admin.rakufun.jp/index#/wms/data-management/packageManager
+WMS 账号：副账号（主账号小柒自己用；同一账号在别处登录会被挤掉）
+
+自动化专用 Chrome 配置：C:\1LR\自动化工作流\浏览器配置
+  - 和平时用的 Chrome 分开；登录一次后保持登录。
+  - 掉线时：用下面命令打开这个专用窗口，手动登录一次，然后关掉窗口。
+    "C:\Program Files\Google\Chrome\Application\chrome.exe" --user-data-dir="C:\1LR\自动化工作流\浏览器配置" --no-first-run --new-window https://wms-admin.rakufun.jp/
+  - 运行自动化时，这个专用窗口必须先关掉。
