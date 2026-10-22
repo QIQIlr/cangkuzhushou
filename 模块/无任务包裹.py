@@ -172,10 +172,13 @@ def _保存结果(结果):
 
 
 if __name__ == "__main__":
+    # 加参数 --可见 时显示浏览器窗口（排查问题用），默认后台运行
     from playwright.sync_api import sync_playwright
+    import time
+    开始 = time.time()
     with sync_playwright() as p:
         try:
-            浏览器, 页面 = 打开WMS(p)
+            浏览器, 页面 = 打开WMS(p, 可见="--可见" in sys.argv)
         except WMS错误 as e:
             结果 = {"状态": "失败", "结果文字": f"【无任务包裹】失败：{e}", "数量": None, "错误信息": str(e)}
         else:
@@ -184,5 +187,5 @@ if __name__ == "__main__":
     文件 = _保存结果(结果)
     print("\n" + 结果["结果文字"])
     print(f"\n状态：{结果['状态']}" + (f"   错误：{结果['错误信息']}" if 结果["错误信息"] else ""))
-    print(f"结果已保存：{文件}")
+    print(f"结果已保存：{文件}   用时：{time.time() - 开始:.0f} 秒")
     sys.exit(0 if 结果["状态"] in ("成功", "无数据") else 1)

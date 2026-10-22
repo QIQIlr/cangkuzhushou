@@ -13,21 +13,34 @@ class WMS错误(Exception):
     """给人看的错误说明。"""
 
 
-def 打开WMS(p):
-    """打开自动化专用 Chrome，进入 WMS 首页；未登录时请人手动登录。返回 (浏览器, 页面)。"""
+def _启动(p, 可见):
     if 专用窗口开着():
         raise WMS错误("请先关闭“自动化专用 Chrome”窗口（登录 WMS 时打开的那个），然后重新运行。")
     try:
-        浏览器 = p.chromium.launch_persistent_context(
-            专用配置目录, channel="chrome", headless=False, no_viewport=True)
+        if 可见:
+            浏览器 = p.chromium.launch_persistent_context(
+                专用配置目录, channel="chrome", headless=False, no_viewport=True)
+        else:
+            浏览器 = p.chromium.launch_persistent_context(
+                专用配置目录, channel="chrome", headless=True, viewport={"width": 1600, "height": 900})
     except Exception as e:
         说明 = str(e)
         if "user data directory is already in use" in 说明 or "ProcessSingleton" in 说明 or "exitCode=21" in 说明:
             raise WMS错误("请先关闭“自动化专用 Chrome”窗口（登录 WMS 时打开的那个），然后重新运行。")
         raise WMS错误("打不开 Chrome：" + 说明.splitlines()[0])
+    return 浏览器, (浏览器.pages[0] if 浏览器.pages else 浏览器.new_page())
 
-    页面 = 浏览器.pages[0] if 浏览器.pages else 浏览器.new_page()
+
+def 打开WMS(p, 可见=False):
+    """打开自动化专用 Chrome，进入 WMS 首页。返回 (浏览器, 页面)。
+    可见=False：后台运行，屏幕上不出现窗口（默认）。
+    掉线时会自动换成可见窗口，请人手动登录后继续。"""
+    浏览器, 页面 = _启动(p, 可见)
     if not _已登录(页面):
+        if not 可见:   # 后台窗口没法登录，换成可见窗口
+            浏览器.close()
+            浏览器, 页面 = _启动(p, True)
+            _已登录(页面)
         for 次数 in (1, 2):
             print("\n========================================", flush=True)
             print("WMS 需要登录：请在弹出的 Chrome 窗口里登录，", flush=True)
