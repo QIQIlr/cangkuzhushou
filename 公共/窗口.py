@@ -51,7 +51,7 @@ class 可复制表格(QTableWidget):
         self.setHorizontalHeaderLabels(列名)
         self.verticalHeader().setVisible(False)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
         粗体 = QFont()
         粗体.setBold(True)
@@ -79,11 +79,83 @@ class 可复制表格(QTableWidget):
             super().keyPressEvent(事件)
 
     def 复制(self):
-        格 = self.currentItem()
-        if 格 is None:
+        """复制选中的格子：一格就只复制这一格；多格按行排好（同一行用 Tab 隔开，每行一行）。"""
+        格们 = sorted(self.selectedItems(), key=lambda g: (g.row(), g.column()))
+        if not 格们:
             return
-        QApplication.clipboard().setText(格.text())
-        self.状态栏.showMessage(f"已复制 {格.text()}", 4000)
+        行们 = {}
+        for g in 格们:
+            行们.setdefault(g.row(), []).append(g.text())
+        文字 = "\n".join("\t".join(v) for v in 行们.values())
+        QApplication.clipboard().setText(文字)
+        self.状态栏.showMessage(f"已复制 {文字}" if len(格们) == 1 else f"已复制 {len(格们)} 格", 4000)
+
+
+class 分组视图(QWidget):
+    """无任务包裹这类结果：上面总览（区域｜数量｜状态），点某个区 → 下面换成这个区的单号；
+    “复制本区全部单号”按钮复制成文字表（标题 + 每行 序号<Tab>单号）。"""
+
+    def __init__(self, 分组, 状态栏):
+        super().__init__()
+        self.状态栏 = 状态栏
+        self.明细 = {区: (单号们, 文字) for 区, 单号们, 文字 in 分组["明细"]}
+        层 = QVBoxLayout(self)
+        层.setContentsMargins(0, 0, 0, 0)
+        层.addWidget(QLabel("各区域数量（点某一行，下面显示这个区的单号）："))
+        列名, 行们 = 分组["总览"]
+        self.总览 = 可复制表格(列名, 行们, 状态栏)
+        self.总览.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.总览.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.总览.itemSelectionChanged.connect(self._换区)
+        层.addWidget(self.总览)
+        头 = QHBoxLayout()
+        self.明细标题 = QLabel("")
+        self.明细标题.setStyleSheet("font-weight:bold")
+        头.addWidget(self.明细标题, 1)
+        self.复制按钮 = QPushButton("复制本区全部单号")
+        self.复制按钮.clicked.connect(self._复制全部)
+        头.addWidget(self.复制按钮)
+        层.addLayout(头)
+        self.明细层 = QVBoxLayout()
+        层.addLayout(self.明细层)
+        self.当前区 = None
+        # 默认显示第一个有单号的区
+        for r in range(self.总览.rowCount()):
+            if self.总览.item(r, 0).text() in self.明细:
+                self.总览.selectRow(r)
+                break
+        else:
+            self._显示(None)
+
+    def _换区(self):
+        行 = self.总览.currentRow()
+        区 = self.总览.item(行, 0).text() if 行 >= 0 else None
+        self._显示(区)
+
+    def _显示(self, 区):
+        while self.明细层.count():
+            w = self.明细层.takeAt(0).widget()
+            if w:
+                w.hide()          # 先藏起来，不然换区的一瞬间旧表格还在
+                w.deleteLater()
+        self.当前区 = 区 if 区 in self.明细 else None
+        if self.当前区 is None:
+            self.明细标题.setText("（这个区没有单号）" if 区 else "（没有单号）")
+            self.复制按钮.setEnabled(False)
+            return
+        单号们, _ = self.明细[区]
+        self.明细标题.setText(f"{区} 的转运单号（{len(单号们)} 个；单击 + Ctrl+C 复制一个）")
+        self.复制按钮.setEnabled(True)
+        位数 = max(2, len(str(len(单号们))))
+        self.明细层.addWidget(可复制表格(["序号", "转运单号"],
+                                     [[str(i).zfill(位数), 号] for i, 号 in enumerate(单号们, 1)], self.状态栏))
+
+    def _复制全部(self):
+        if self.当前区 is None:
+            return
+        单号们, 文字 = self.明细[self.当前区]
+        QApplication.clipboard().setText(文字)
+        self.状态栏.showMessage(f"已复制 {self.当前区} {len(单号们)} 个单号", 5000)
 
 
 class 飞书设置窗口(QDialog):
@@ -421,7 +493,15 @@ class 主窗口(QMainWindow):
             标题 = QLabel(项.get("标题") or 项["模块"])
             标题.setStyleSheet("font-weight:bold; font-size:11pt; margin-top:6px")
             层.addWidget(标题)
-            if 项.get("表们"):
+            if 项.get("分组"):
+                层.addWidget(分组视图(项["分组"], self.statusBar()))
+                for 句 in 项.get("备注", []):
+                    注 = QLabel(句)
+                    注.setWordWrap(True)
+                    注.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                    注.setStyleSheet("color:#b35c00" if "⚠" in 句 else "")
+                    层.addWidget(注)
+            elif 项.get("表们"):
                 for 表名, 列名, 行们 in 项["表们"]:
                     if not 行们:
                         continue

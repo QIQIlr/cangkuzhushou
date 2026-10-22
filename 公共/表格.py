@@ -135,3 +135,42 @@ def 明细卡片们(标题, 头元素, 列名, 行们, 尾元素=(), 颜色="blu
     卡们[-1] = 卡们[-1] + 尾元素
     共 = len(卡们)
     return [组卡片(标题 + (f"（{i}/{共}）" if 共 > 1 else ""), 元素们, 颜色) for i, 元素们 in enumerate(卡们, 1)]
+
+def 折叠面板(标题, 元素们, 展开=False):
+    """飞书卡片的折叠面板：平时只显示标题，点一下展开里面的内容。
+    文档：https://open.feishu.cn/document/feishu-cards/card-json-v2-components/containers/collapsible-panel"""
+    return {"tag": "collapsible_panel", "expanded": 展开,
+            "header": {"title": {"tag": "markdown", "content": 标题},
+                       "icon": {"tag": "standard_icon", "token": "down-small-ccm_outlined", "size": "16px 16px"},
+                       "icon_position": "right", "icon_expanded_angle": -180},
+            "border": {"color": "grey", "corner_radius": "5px"},
+            "vertical_spacing": "4px", "padding": "4px 8px 4px 8px",
+            "elements": list(元素们)}
+
+
+def 单号文字表(单号们, 标题="", 分隔="\t"):
+    """把单号排成整齐的文字表：第一行标题，下面每行“序号<Tab>单号”，序号补零对齐（01、02…；超过 99 用 001）。
+    用 Tab 分隔：粘到 Excel 会自动分成两列，粘到记事本、飞书也对齐。"""
+    位数 = max(2, len(str(len(单号们))))
+    行们 = ([标题] if 标题 else []) + [f"{str(i).zfill(位数)}{分隔}{号}" for i, 号 in enumerate(单号们, 1)]
+    return "\n".join(行们)
+
+
+def 代码块(文字):
+    """卡片里的等宽文字块（对齐不会乱，方便选中复制）。"""
+    return {"tag": "markdown", "content": "```\n" + 文字 + "\n```"}
+
+
+def 按大小分卡(标题, 头元素, 分段元素们, 尾元素=(), 颜色="blue", 上限字节=18000):
+    """头元素放第 1 张，尾元素放最后一张；分段元素（例如每个区一个折叠面板）按大小依次装进卡片，
+    一张装不下就开下一张，标题加“（1/2）”。一个分段本身超过上限时，按行拆开（不丢内容）。"""
+    卡们, 当前 = [], list(头元素)
+    for 段 in 分段元素们:
+        if 当前 and _大小(组卡片(标题, 当前 + [段] + list(尾元素), 颜色)) > 上限字节:
+            卡们.append(当前)
+            当前 = []
+        当前.append(段)
+    卡们.append(当前)
+    卡们[-1] = 卡们[-1] + list(尾元素)
+    共 = len(卡们)
+    return [组卡片(标题 + (f"（{i}/{共}）" if 共 > 1 else ""), 元素们, 颜色) for i, 元素们 in enumerate(卡们, 1)]
