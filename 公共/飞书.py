@@ -56,7 +56,28 @@ def 发送(消息, 网址=None, 关键词=None, 超时秒=10):
         return "失败", "还没有设置飞书：请双击 设置飞书.bat"
     if 关键词 and 关键词 not in 消息:
         消息 = f"{消息}\n—— {关键词}"
-    数据 = json.dumps({"msg_type": "text", "content": {"text": 消息}}, ensure_ascii=False).encode("utf-8")
+    return _投递(网址, {"msg_type": "text", "content": {"text": 消息}}, 超时秒)
+
+
+def 发送卡片(卡片, 网址=None, 关键词=None, 超时秒=10):
+    """发飞书消息卡片（可以带表格）。卡片是 JSON 2.0 结构（schema/header/body）。
+    关键词不在卡片文字里时，自动在卡片最后加一行小字关键词。返回值和 发送() 一样。"""
+    设置 = 读设置()
+    网址 = 网址 or 设置.get("飞书Webhook", "")
+    关键词 = 设置.get("飞书关键词", "") if 关键词 is None else 关键词
+    if not 网址:
+        return "失败", "还没有设置飞书：请在仓库助手里点“设置飞书”"
+    卡片 = json.loads(json.dumps(卡片, ensure_ascii=False))   # 复制一份，不改原来的
+    if 关键词 and 关键词 not in json.dumps(卡片, ensure_ascii=False):
+        卡片.setdefault("body", {}).setdefault("elements", []).append(
+            {"tag": "markdown", "content": f"<font color='grey'>{关键词}</font>", "text_size": "notation"})
+    return _投递(网址, {"msg_type": "interactive", "card": 卡片}, 超时秒)
+
+
+def _投递(网址, 内容体, 超时秒):
+    数据 = json.dumps(内容体, ensure_ascii=False).encode("utf-8")
+    if len(数据) > 20000:
+        return "失败", f"消息太长（{len(数据)//1024} KB），飞书最多 20 KB"
     请求 = urllib.request.Request(网址, data=数据, headers={"Content-Type": "application/json; charset=utf-8"})
     try:
         with urllib.request.urlopen(请求, timeout=超时秒) as 回应:

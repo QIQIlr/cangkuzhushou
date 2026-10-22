@@ -18,7 +18,7 @@ sys.path.insert(0, str(根目录))
 
 from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
 from PySide6.QtGui import QFont  # noqa: E402
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog, QFormLayout, QGroupBox,  # noqa: E402
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog, QFormLayout, QGroupBox, QSpinBox,  # noqa: E402
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QSplitter, QVBoxLayout, QWidget)
@@ -83,6 +83,63 @@ class 飞书设置窗口(QDialog):
             QMessageBox.warning(self, "没有成功", f"测试没有成功（{状态}）：{说明}\n\n设置没有保存。")
 
 
+class 模块设置窗口(QDialog):
+    """一个模块自己的设置：查询区域、发到飞书、往前天数（模块有这项时）。改完点“保存”。"""
+
+    def __init__(self, 父, 模块名):
+        super().__init__(父)
+        import importlib
+        from 公共 import 模块参数
+        self.模块参数, self.模块名 = 模块参数, 模块名
+        try:
+            默认 = getattr(importlib.import_module(f"模块.{模块名}"), "默认参数", {})
+        except Exception:
+            默认 = {}
+        self.参数 = 模块参数.读取(模块名, 默认)
+        self.setWindowTitle(f"模块设置：{模块名}")
+        self.setMinimumWidth(420)
+        层 = QVBoxLayout(self)
+        self.区域框 = {}
+        if "区域" in self.参数:
+            组 = QGroupBox("查询区域（勾选要查的区域；表格/结果按这里的顺序）")
+            行 = QHBoxLayout(组)
+            for 区 in 模块参数.区域选项():
+                框 = QCheckBox(区)
+                框.setChecked(区 in self.参数["区域"])
+                self.区域框[区] = 框
+                行.addWidget(框)
+            层.addWidget(组)
+            层.addWidget(QLabel("区域选项来自 WMS 的“所属区域”下拉（运行增值待处理时会自动更新）。"))
+        self.发送框 = QCheckBox("结果发到飞书")
+        self.发送框.setChecked(self.参数.get("发到飞书", True))
+        层.addWidget(self.发送框)
+        self.天数框 = None
+        if "往前天数" in self.参数:
+            行 = QHBoxLayout()
+            行.addWidget(QLabel("除今天外，再往前查几个自然日："))
+            self.天数框 = QSpinBox()
+            self.天数框.setRange(1, 9)   # 加上今天、更早、合计，表格最多 12 行
+            self.天数框.setValue(int(self.参数["往前天数"]))
+            行.addWidget(self.天数框)
+            层.addLayout(行)
+        保存 = QPushButton("保存")
+        保存.clicked.connect(self.保存)
+        层.addWidget(保存)
+
+    def 保存(self):
+        if self.区域框:
+            选中 = [区 for 区, 框 in self.区域框.items() if 框.isChecked()]
+            if not 选中:
+                QMessageBox.warning(self, "至少选一个区域", "请至少勾选一个区域。")
+                return
+            self.参数["区域"] = 选中
+        self.参数["发到飞书"] = self.发送框.isChecked()
+        if self.天数框:
+            self.参数["往前天数"] = self.天数框.value()
+        self.模块参数.保存(self.模块名, self.参数)
+        self.accept()
+
+
 class 主窗口(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -122,6 +179,10 @@ class 主窗口(QMainWindow):
             b = QPushButton(文字)
             b.clicked.connect(lambda _=False, d=方向: self.移动(d))
             行.addWidget(b)
+        设 = QPushButton("⚙ 设置（区域等）")
+        设.clicked.connect(self.模块设置)
+        行.addWidget(设)
+        self.列表.itemDoubleClicked.connect(lambda _: self.模块设置())
         左.addLayout(行)
         self.提醒 = QLabel("")
         self.提醒.setWordWrap(True)
@@ -154,6 +215,7 @@ class 主窗口(QMainWindow):
         右层.addWidget(QLabel("结果（和发到飞书的一样）："))
         self.结果 = QPlainTextEdit()
         self.结果.setReadOnly(True)
+        self.结果.setFont(QFont("NSimSun", 11))   # 等宽字体，表格才能对齐
         右层.addWidget(self.结果, 3)
         行2 = QHBoxLayout()
         self.飞书状态 = QLabel("")
@@ -213,6 +275,13 @@ class 主窗口(QMainWindow):
         self.列表.setCurrentRow(目标)
         self.列表.blockSignals(False)
         self.保存模块()
+
+    def 模块设置(self):
+        项 = self.列表.currentItem()
+        if 项 is None:
+            QMessageBox.information(self, "模块设置", "请先在左边点选一个模块。")
+            return
+        模块设置窗口(self, 项.text()).exec()
 
     # ---------- 运行 ----------
     def 运行全部(self):
@@ -284,15 +353,24 @@ class 主窗口(QMainWindow):
         运行记录.观察者 = None
         self.运行中 = False
         self._设可用(True)
-        self.结果.setPlainText(总结["消息"])
-        状态, 说明 = 总结["飞书"]
-        self.飞书状态.setText(f"飞书：{状态}（{说明}）")
+        段们, 飞书们, 坏的 = [], [], []
+        for 项 in 总结["消息们"]:
+            状态, 说明 = 项["飞书"]
+            尾 = f"\n（飞书：{状态}{'，' + 说明 if 状态 != '成功' else ''}）"
+            if 项["附件"]:
+                尾 += f"\n（Excel：{项['附件']}）"
+            段们.append(项["文字"] + 尾)
+            飞书们.append(f"{项['模块']} {状态}")
+            if 状态 in ("失败", "未知"):
+                坏的.append(f"{项['模块']}：{状态}，{说明}")
+        self.结果.setPlainText(("\n\n" + "━" * 30 + "\n\n").join(段们))
+        self.飞书状态.setText("飞书：" + "；".join(飞书们))
         self.本次日志 = 总结["日志文件夹"]
         self.开本次日志按钮.setEnabled(True)
         有问题 = [r for r in 总结["结果们"] if r["状态"] not in ("成功", "无数据")]
         self.进度文字.setText("完成：全部正常 ✔" if not 有问题 else f"完成：{len(有问题)} 个模块有问题 ⚠（看下面的结果和建议）")
-        if 状态 in ("失败", "未知"):
-            QMessageBox.warning(self, "飞书没发成功", f"飞书：{状态}\n{说明}")
+        if 坏的:
+            QMessageBox.warning(self, "飞书没发成功", "\n".join(坏的))
 
     def _运行出错(self, 详情):
         运行记录.观察者 = None
