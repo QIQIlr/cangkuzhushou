@@ -1,5 +1,5 @@
 # 职责：查询 D区、E区“已挂起 + 任务小类=无任务”的包裹，列出转运单号。只读，不改任何 WMS 数据。
-# 输入：已登录的 WMS 页面（单独运行时自己打开）。
+# 输入：已登录的 WMS 页面 + 运行记录（单独运行时自己打开）。
 # 输出：结果字典 {状态, 结果文字, 数量, 错误信息}
 #   状态：成功 / 无数据 / 不完整 / 失败
 #   - 无数据：页面明确显示“共 0 条记录”
@@ -7,7 +7,8 @@
 #   - 失败：读不到总数或页面出错——这时绝不报 0
 # 步骤（小柒 2026-10-22 确认）：首页 → 仓库管理 → 数据管理 → 包裹管理 → 已挂起 → 展开
 #   → 任务小类选“无任务” → 清空“签收时间” → 区域选 D区 → 查询 → 读全部页；再对 E区 查一次。
-# 排错：失败时截图保存在 日志 文件夹，文件名带时间。
+# 一个区域失败不影响另一个区域。
+# 排错：每次运行的详细记录在 日志\日期_时间_无任务包裹\ 文件夹里。
 import math
 import re
 import sys
@@ -17,8 +18,12 @@ from urllib.parse import parse_qs, urlparse
 
 根目录 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(根目录))
-from 公共.wms import WMS错误, 打开WMS, 进入页面  # noqa: E402
+from 公共 import 飞书  # noqa: E402
+from 公共.wms import 打开WMS, 进入页面  # noqa: E402
+from 公共.日志 import 运行记录  # noqa: E402
+from 公共.错误 import 自动化错误, 归类, 页面改版, 网络超时, 数据不完整  # noqa: E402
 
+模块名 = "无任务包裹"
 查询接口 = "selectAllPage"   # 包裹管理页面查询时，网址里带的这段文字
 要查的区域 = ["D区", "E区"]
 每页条数 = 30
@@ -30,18 +35,23 @@ def _表单项(页面, 名称):
 
 
 def _下拉选择(页面, 名称, 选项):
-    _表单项(页面, 名称).locator(".el-select").click()
+    框 = _表单项(页面, 名称)
+    if 框.count() == 0:
+        raise 自动化错误(页面改版, f"查询条件里找不到“{名称}”。")
+    框.locator(".el-select").click()
     页面.wait_for_timeout(500)
     项 = 页面.locator(".el-select-dropdown__item:visible").filter(has_text=re.compile("^" + 选项 + "$")).first
     if 项.count() == 0:
         页面.keyboard.press("Escape")
-        raise WMS错误(f"“{名称}”下拉里找不到“{选项}”。")
+        raise 自动化错误(页面改版, f"“{名称}”下拉里找不到“{选项}”。")
     项.click()
     页面.wait_for_timeout(300)
 
 
 def _清空签收时间(页面):
     日期 = _表单项(页面, "签收时间")
+    if 日期.count() == 0:
+        raise 自动化错误(页面改版, "查询条件里找不到“签收时间”。")
     叉 = 日期.locator(".el-range__close-icon")
     for _ in range(5):   # 小叉只在鼠标停在上面时出现，所以多试几次
         页面.mouse.move(0, 0)
@@ -52,7 +62,7 @@ def _清空签收时间(页面):
     叉.click(timeout=5000)
     页面.wait_for_timeout(300)
     if any(框.input_value() for 框 in 日期.locator("input").all()):
-        raise WMS错误("“签收时间”没有清空。")
+        raise 自动化错误(页面改版, "“签收时间”没有清空。")
 
 
 def _等查询结果(页面, 动作, 页码=1):
@@ -63,14 +73,19 @@ def _等查询结果(页面, 动作, 页码=1):
             动作()
         回应 = 等待.value
         数据 = 回应.json()
-    except Exception:
-        raise WMS错误("点击后 30 秒内没有拿到查询结果。")
+    except 自动化错误:
+        raise
+    except Exception as e:
+        错误 = 归类(e)
+        if 错误.类型 == 页面改版:
+            raise 错误
+        raise 自动化错误(网络超时, "点击后 30 秒内没有拿到查询结果。")
     if not isinstance(数据, dict) or 数据.get("code") != 0 or "data" not in 数据:
-        raise WMS错误("WMS 返回了错误：" + str(数据)[:200])
+        raise 自动化错误(网络超时, "WMS 返回了错误：" + str(数据)[:200])
     return parse_qs(urlparse(回应.url).query), 数据["data"]
 
 
-def 查询一个区域(页面, 区域):
+def 查询一个区域(页面, 区域, 记录=None):
     """在已设好“已挂起 / 无任务 / 无签收时间”的页面上，查一个区域，返回 (状态, 总数, 单号列表, 说明)。"""
     _下拉选择(页面, "区域", 区域)
     参数, 数据 = _等查询结果(页面, lambda: 页面.get_by_role("button", name="查询").first.click())
@@ -80,24 +95,28 @@ def 查询一个区域(页面, 区域):
     应有 = {"packagesStatus": "11", "taskType": "-1", "shelvesRegionNum": 区域字母}
     for 键, 值 in 应有.items():
         if 参数.get(键, [None])[0] != 值:
-            raise WMS错误(f"查询条件不对（{键}={参数.get(键)}），本次结果不可信。")
+            raise 自动化错误(页面改版, f"查询条件没有生效（{键}={参数.get(键)}），本次结果不可信。")
     if any("time" in 键.lower() for 键 in 参数):
-        raise WMS错误("签收时间条件没有清空，本次结果不可信。")
+        raise 自动化错误(页面改版, "签收时间条件没有清空，本次结果不可信。")
 
     总数 = 数据.get("total")
     if not isinstance(总数, int):
-        raise WMS错误("读不到总条数。")
+        raise 自动化错误(数据不完整, "读不到总条数。")
     try:   # 核对：页面上显示的“共 N 条记录”和读到的一致
         页面.locator("span").filter(has_text=re.compile(f"^共 {总数} 条记录$")).first.wait_for(timeout=10000)
     except Exception:
-        raise WMS错误(f"页面显示的条数和读到的 {总数} 不一致。")
+        raise 自动化错误(数据不完整, f"页面显示的条数和读到的 {总数} 不一致。")
 
     单号 = [项.get("transportNum") for 项 in 数据.get("list", [])]
     总页数 = math.ceil(总数 / 每页条数)
+    if 记录:
+        记录.写(f"    共 {总数} 条，{总页数} 页")
     for 页码 in range(2, 总页数 + 1):
         下一页 = 页面.locator(".vxe-pager--next-btn:visible").first
         _, 数据 = _等查询结果(页面, 下一页.click, 页码)
         单号 += [项.get("transportNum") for 项 in 数据.get("list", [])]
+        if 记录:
+            记录.写(f"    已读第 {页码} 页")
 
     单号 = [号 for 号 in 单号 if 号]
     if 总数 == 0:
@@ -107,40 +126,47 @@ def 查询一个区域(页面, 区域):
     return "成功", 总数, 单号, ""
 
 
-def 运行(页面):
+def 运行(页面, 记录):
     """主控以后也调用这个函数。页面需已登录。"""
     时间 = datetime.now().strftime("%Y-%m-%d %H:%M")
     行 = [f"【无任务包裹】{时间}"]
     状态表, 错误, 合计 = [], [], 0
     try:
-        进入页面(页面, ["仓库管理", "数据管理", "包裹管理"], 等待接口=查询接口)
-        _等查询结果(页面, lambda: 页面.locator(".el-tabs__item").filter(
-            has_text=re.compile("^已挂起")).first.click())
-        页面.get_by_text("展开").first.click()
-        页面.wait_for_timeout(800)
-        _下拉选择(页面, "任务小类", "无任务")
-        _清空签收时间(页面)
-    except WMS错误 as e:
-        _截图(页面, "准备")
-        return {"状态": "失败", "结果文字": "\n".join(行 + [f"失败：{e}"]), "数量": None, "错误信息": str(e)}
+        with 记录.步骤("进入 仓库管理 → 数据管理 → 包裹管理"):
+            进入页面(页面, ["仓库管理", "数据管理", "包裹管理"], 等待接口=查询接口)
+        with 记录.步骤("点击“已挂起”"):
+            _等查询结果(页面, lambda: 页面.locator(".el-tabs__item").filter(
+                has_text=re.compile("^已挂起")).first.click())
+        with 记录.步骤("展开更多条件"):
+            页面.get_by_text("展开").first.click()
+            页面.wait_for_timeout(800)
+        with 记录.步骤("任务小类选“无任务”"):
+            _下拉选择(页面, "任务小类", "无任务")
+        with 记录.步骤("清空“签收时间”"):
+            _清空签收时间(页面)
+    except 自动化错误 as e:
+        return {"状态": "失败", "结果文字": "\n".join(行 + ["查询失败"]), "数量": None,
+                "错误信息": e.一句话(模块名), "错误列表": [e]}
 
     for 区域 in 要查的区域:
         try:
-            状态, 总数, 单号, 说明 = 查询一个区域(页面, 区域)
-        except WMS错误 as e:
-            状态, 总数, 单号, 说明 = "失败", None, [], str(e)
-            _截图(页面, 区域)
-        状态表.append(状态)
-        if 状态 == "失败":
-            行.append(f"{区域}：查询失败（{说明}）")
-            错误.append(f"{区域}：{说明}")
+            with 记录.步骤(f"查询 {区域}"):
+                状态, 总数, 单号, 说明 = 查询一个区域(页面, 区域, 记录)
+                记录.写(f"    结果：{状态}，{总数} 个" + (f"（{说明}）" if 说明 else ""))
+        except 自动化错误 as e:
+            状态表.append("失败")
+            行.append(f"{区域}：查询失败")
+            错误.append(e)
             continue
+        状态表.append(状态)
         合计 += 总数
-        标记 = "（不完整！" + 说明 + "）" if 状态 == "不完整" else ""
+        标记 = "（不完整！）" if 状态 == "不完整" else ""
         行.append(f"{区域}：{总数}个无任务包裹{标记}")
         行 += 单号
         if 状态 == "不完整":
-            错误.append(f"{区域}：{说明}")
+            e = 自动化错误(数据不完整, 说明)
+            e.步骤 = f"查询 {区域}"
+            错误.append(e)
 
     if "失败" in 状态表:
         总状态 = "失败"
@@ -151,41 +177,69 @@ def 运行(页面):
     else:
         总状态 = "成功"
     return {"状态": 总状态, "结果文字": "\n".join(行),
-            "数量": None if 总状态 == "失败" else 合计, "错误信息": "；".join(错误)}
+            "数量": None if 总状态 == "失败" else 合计,
+            "错误信息": "；".join(e.一句话(模块名) for e in 错误), "错误列表": 错误}
 
 
-def _截图(页面, 名称):
+def 组成消息(结果, 文件夹名):
+    """飞书消息 = 结果文字；不是成功/无数据时，加上状态、原因、建议和日志文件夹名。"""
+    消息 = 结果["结果文字"]
+    if 结果["状态"] not in ("成功", "无数据"):
+        消息 += f"\n\n⚠ 状态：{结果['状态']}"
+        for e in 结果.get("错误列表", []):
+            消息 += f"\n{e.一句话(模块名)}"
+        消息 += f"\n日志：{文件夹名}"
+    return 消息
+
+
+def 单独运行(可见=False, 发送=True):
+    from playwright.sync_api import sync_playwright
+    方式 = ("可见窗口" if 可见 else "后台") + ("，发飞书" if 发送 else "，不发飞书")
+    记录 = 运行记录(模块名, 方式)
     try:
-        目录 = 根目录 / "日志"
-        目录.mkdir(exist_ok=True)
-        页面.screenshot(path=str(目录 / f"无任务包裹_{名称}_{datetime.now():%Y%m%d_%H%M%S}.png"))
-    except Exception:
-        pass
+        with sync_playwright() as p:
+            浏览器 = None
+            try:
+                with 记录.步骤("打开 WMS 并检查登录"):
+                    浏览器, 页面 = 打开WMS(p, 可见=可见, 记录=记录)
+                结果 = 运行(页面, 记录)
+            except 自动化错误 as e:
+                结果 = {"状态": "失败", "结果文字": f"【无任务包裹】{datetime.now():%Y-%m-%d %H:%M}\n查询失败",
+                        "数量": None, "错误信息": e.一句话(模块名), "错误列表": [e]}
+            finally:
+                if 浏览器:
+                    浏览器.close()
+    except Exception as 原始:   # 程序本身的意外错误，也要留下记录
+        记录.保存现场(原始)
+        e = 归类(原始)
+        e.步骤 = e.步骤 or "（不在任何步骤里）"
+        结果 = {"状态": "失败", "结果文字": f"【无任务包裹】{datetime.now():%Y-%m-%d %H:%M}\n查询失败",
+                "数量": None, "错误信息": e.一句话(模块名), "错误列表": [e]}
 
+    消息 = 组成消息(结果, 记录.文件夹名)
+    if 发送 and 飞书.可以发送():
+        记录.写("发送飞书 ……")
+        记录.保存发送内容(消息, "（准备发送）")
+        发送状态, 发送说明 = 飞书.发送(消息)
+        记录.保存发送内容(消息, f"{发送状态}：{发送说明}")
+        记录.写(f"    飞书：{发送状态}（{发送说明}）")
+    else:
+        发送状态, 发送说明 = "未发送", ("本次选择不发送" if not 发送 else "还没设置好飞书（双击 设置飞书.bat）")
+        记录.保存发送内容(消息, f"未发送：{发送说明}")
+        记录.写(f"飞书：未发送（{发送说明}）")
 
-def _保存结果(结果):
-    目录 = 根目录 / "日志"
-    目录.mkdir(exist_ok=True)
-    文件 = 目录 / f"无任务包裹_{datetime.now():%Y%m%d_%H%M%S}.txt"
-    文件.write_text(f"状态：{结果['状态']}\n错误信息：{结果['错误信息'] or '无'}\n\n{结果['结果文字']}\n", encoding="utf-8")
-    return 文件
+    摘要 = 结果["错误信息"]
+    if 发送状态 in ("失败", "未知"):
+        摘要 = (摘要 + "；" if 摘要 else "") + f"飞书{发送状态}：{发送说明}"
+    用时 = 记录.结束(结果["状态"], 结果["数量"], 摘要)
+
+    print("\n" + 消息)
+    print(f"\n状态：{结果['状态']}    飞书：{发送状态}（{发送说明}）    用时：{用时:.0f} 秒")
+    print(f"日志：{记录.文件夹}")
+    return 结果
 
 
 if __name__ == "__main__":
-    # 加参数 --可见 时显示浏览器窗口（排查问题用），默认后台运行
-    from playwright.sync_api import sync_playwright
-    import time
-    开始 = time.time()
-    with sync_playwright() as p:
-        try:
-            浏览器, 页面 = 打开WMS(p, 可见="--可见" in sys.argv)
-        except WMS错误 as e:
-            结果 = {"状态": "失败", "结果文字": f"【无任务包裹】失败：{e}", "数量": None, "错误信息": str(e)}
-        else:
-            结果 = 运行(页面)
-            浏览器.close()
-    文件 = _保存结果(结果)
-    print("\n" + 结果["结果文字"])
-    print(f"\n状态：{结果['状态']}" + (f"   错误：{结果['错误信息']}" if 结果["错误信息"] else ""))
-    print(f"结果已保存：{文件}   用时：{time.time() - 开始:.0f} 秒")
+    # 参数：--可见 显示浏览器窗口（排查用）；--不发送 不发飞书
+    结果 = 单独运行(可见="--可见" in sys.argv, 发送="--不发送" not in sys.argv)
     sys.exit(0 if 结果["状态"] in ("成功", "无数据") else 1)
