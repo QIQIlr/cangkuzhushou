@@ -1,5 +1,5 @@
 # 职责：仓库助手菜单（双击 仓库助手.bat 打开）。
-# 菜单：运行全部已启用模块 / 只运行一个 / 临时自选几个 / 调整顺序和开关 / 设置消息格式 / 设置飞书 / 登录 WMS
+# 菜单：运行全部已启用模块 / 只运行一个 / 临时自选几个 / 调整顺序和开关 / 设置飞书 / 登录 WMS
 # 运行时：WMS 只打开一次，模块按顺序跑，一个失败不影响下一个，最后发一条飞书汇总。
 import os
 import re
@@ -101,9 +101,8 @@ def 主菜单():
         print(" 2. 只运行某一个模块")
         print(" 3. 这次临时自选几个（例如 1,3）")
         print(" 4. 调整模块顺序和开关")
-        print(" 5. 设置消息格式")
-        print(" 6. 设置飞书")
-        print(" 7. 登录 WMS")
+        print(" 5. 设置飞书")
+        print(" 6. 登录 WMS")
         print(" 0. 退出")
         选 = input("请输入数字，按回车：").strip()
 
@@ -122,10 +121,8 @@ def 主菜单():
             调整顺序(清单)
             continue
         elif 选 == "5":
-            subprocess.run([PY, str(根目录 / "公共" / "设置消息格式.py")])
-        elif 选 == "6":
             subprocess.run([PY, str(根目录 / "公共" / "设置飞书.py")])
-        elif 选 == "7":
+        elif 选 == "6":
             subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
             print("\n已打开自动化专用 Chrome。请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。")
         elif 选 == "0":

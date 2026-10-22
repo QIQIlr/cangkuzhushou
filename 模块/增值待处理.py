@@ -229,7 +229,8 @@ def 组成消息(结果, 文件夹名, 用时=None):
     卡片 = 表格.卡片(标题, 列名, 行们, 备注, 颜色) if 列名 else \
         {"schema": "2.0", "header": {"title": {"tag": "plain_text", "content": 标题}, "template": "red"},
          "body": {"elements": [{"tag": "markdown", "content": "\n".join(备注) or "没有查到数据"}]}}
-    return {"文字": 文字, "卡片": 卡片, "附件": 附件}, ""
+    return {"文字": 文字, "卡片": 卡片, "附件": 附件, "标题": 标题, "备注": [x.replace("**", "") for x in 备注],
+            "表们": [("按日期", 列名, 行们)] if 列名 else []}, ""
 
 
 if __name__ == "__main__":

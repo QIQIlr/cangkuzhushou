@@ -1,7 +1,7 @@
 # 职责：仓库助手 窗口版（测试版）。双击 仓库助手（测试版）.vbs 打开，不出现黑色命令行窗口。
 # 内容：左边模块列表（勾选=启用，拖动或上移/下移=调顺序，改动立即保存到 模块设置.txt）；
 #       右边运行按钮、进度、运行过程、结果（和发到飞书的一样）、打开日志；
-#       下面设置：飞书、消息格式、登录 WMS。
+#       下面设置：飞书、登录 WMS。
 # 说明：查询在后台线程里跑，窗口不会卡住；掉线时弹窗请你登录。
 #       业务逻辑全部复用 公共\运行.py 和各模块，这里只是“外壳”。
 import os
@@ -17,10 +17,11 @@ from pathlib import Path
 sys.path.insert(0, str(根目录))
 
 from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
-from PySide6.QtGui import QFont  # noqa: E402
+from PySide6.QtGui import QFont, QKeySequence  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog, QFormLayout, QGroupBox, QSpinBox,  # noqa: E402
-                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+                               QScrollArea, QTableWidget, QTableWidgetItem,
                                QSplitter, QVBoxLayout, QWidget)
 
 from 公共 import 模块设置, 飞书  # noqa: E402
@@ -39,6 +40,50 @@ class 传话(QObject):
     全部完成 = Signal(object)
     出错 = Signal(str)
     需要登录 = Signal(int)
+
+
+class 可复制表格(QTableWidget):
+    """结果表格：只读；单击选中一格，Ctrl+C 或双击就把这一格的内容复制到剪贴板，状态栏提示“已复制 XXX”。"""
+
+    def __init__(self, 列名, 行们, 状态栏):
+        super().__init__(len(行们), len(列名))
+        self.状态栏 = 状态栏
+        self.setHorizontalHeaderLabels(列名)
+        self.verticalHeader().setVisible(False)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectItems)
+        粗体 = QFont()
+        粗体.setBold(True)
+        for r, 行 in enumerate(行们):
+            加粗 = any(str(x).startswith("**") for x in 行)
+            for c, 值 in enumerate(行):
+                格 = QTableWidgetItem(str(值).replace("**", ""))
+                格.setTextAlignment((Qt.AlignLeft if c == 0 or isinstance(值, str) and "-" in str(值) else Qt.AlignRight) | Qt.AlignVCenter)
+                if 加粗:
+                    格.setFont(粗体)
+                if "⚠" in str(值) or str(值) == "失败":
+                    格.setForeground(Qt.darkRed)
+                self.setItem(r, c, 格)
+        self.resizeColumnsToContents()
+        self.horizontalHeader().setStretchLastSection(True)
+        高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(min(len(行们), 15))) + 6
+        self.setMinimumHeight(min(高, 460))
+        self.setMaximumHeight(高 if len(行们) <= 15 else 460)
+        self.itemDoubleClicked.connect(lambda _: self.复制())
+
+    def keyPressEvent(self, 事件):
+        if 事件.matches(QKeySequence.Copy):
+            self.复制()
+        else:
+            super().keyPressEvent(事件)
+
+    def 复制(self):
+        格 = self.currentItem()
+        if 格 is None:
+            return
+        QApplication.clipboard().setText(格.text())
+        self.状态栏.showMessage(f"已复制 {格.text()}", 4000)
 
 
 class 飞书设置窗口(QDialog):
@@ -211,12 +256,12 @@ class 主窗口(QMainWindow):
         self.过程 = QPlainTextEdit()
         self.过程.setReadOnly(True)
         self.过程.setMaximumBlockCount(2000)
-        右层.addWidget(self.过程, 2)
-        右层.addWidget(QLabel("结果（和发到飞书的一样）："))
-        self.结果 = QPlainTextEdit()
-        self.结果.setReadOnly(True)
-        self.结果.setFont(QFont("NSimSun", 11))   # 等宽字体，表格才能对齐
-        右层.addWidget(self.结果, 3)
+        右层.addWidget(self.过程, 1)
+        右层.addWidget(QLabel("结果（和发到飞书的一样；单击选中一格，Ctrl+C 或双击即可复制）："))
+        self.结果区 = QScrollArea()
+        self.结果区.setWidgetResizable(True)
+        self.结果区.setWidget(QWidget())
+        右层.addWidget(self.结果区, 3)
         行2 = QHBoxLayout()
         self.飞书状态 = QLabel("")
         行2.addWidget(self.飞书状态, 1)
@@ -232,7 +277,7 @@ class 主窗口(QMainWindow):
         # 下：设置
         设置框 = QGroupBox("设置")
         设 = QHBoxLayout(设置框)
-        for 文字, 函数 in (("设置飞书", self.设置飞书), ("设置消息格式", self.设置消息格式),
+        for 文字, 函数 in (("设置飞书", self.设置飞书),
                          ("登录 WMS", self.登录WMS), ("打开日志文件夹", lambda: os.startfile(日志根)),
                          ("刷新模块列表", self.刷新模块)):
             b = QPushButton(文字)
@@ -308,7 +353,7 @@ class 主窗口(QMainWindow):
         self.运行中 = True
         self._设可用(False)
         self.过程.clear()
-        self.结果.clear()
+        self.结果区.setWidget(QWidget())
         self.飞书状态.setText("")
         self.开本次日志按钮.setEnabled(False)
         self.进度条.setMaximum(len(名列表))
@@ -353,17 +398,13 @@ class 主窗口(QMainWindow):
         运行记录.观察者 = None
         self.运行中 = False
         self._设可用(True)
-        段们, 飞书们, 坏的 = [], [], []
+        飞书们, 坏的 = [], []
         for 项 in 总结["消息们"]:
             状态, 说明 = 项["飞书"]
-            尾 = f"\n（飞书：{状态}{'，' + 说明 if 状态 != '成功' else ''}）"
-            if 项["附件"]:
-                尾 += f"\n（Excel：{项['附件']}）"
-            段们.append(项["文字"] + 尾)
             飞书们.append(f"{项['模块']} {状态}")
             if 状态 in ("失败", "未知"):
                 坏的.append(f"{项['模块']}：{状态}，{说明}")
-        self.结果.setPlainText(("\n\n" + "━" * 30 + "\n\n").join(段们))
+        self._显示结果(总结["消息们"])
         self.飞书状态.setText("飞书：" + "；".join(飞书们))
         self.本次日志 = 总结["日志文件夹"]
         self.开本次日志按钮.setEnabled(True)
@@ -371,6 +412,45 @@ class 主窗口(QMainWindow):
         self.进度文字.setText("完成：全部正常 ✔" if not 有问题 else f"完成：{len(有问题)} 个模块有问题 ⚠（看下面的结果和建议）")
         if 坏的:
             QMessageBox.warning(self, "飞书没发成功", "\n".join(坏的))
+
+    def _显示结果(self, 消息们):
+        """每个模块：标题 + 表格（可复制）+ 备注 + 飞书/Excel。没有表格的模块就显示文字。"""
+        面板 = QWidget()
+        层 = QVBoxLayout(面板)
+        for 项 in 消息们:
+            标题 = QLabel(项.get("标题") or 项["模块"])
+            标题.setStyleSheet("font-weight:bold; font-size:11pt; margin-top:6px")
+            层.addWidget(标题)
+            if 项.get("表们"):
+                for 表名, 列名, 行们 in 项["表们"]:
+                    if not 行们:
+                        continue
+                    if len(项["表们"]) > 1:
+                        层.addWidget(QLabel(表名))
+                    层.addWidget(可复制表格(列名, 行们, self.statusBar()))
+                for 句 in 项.get("备注", []):
+                    注 = QLabel(句)
+                    注.setWordWrap(True)
+                    注.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                    注.setStyleSheet("color:#b35c00" if "⚠" in 句 else "")
+                    层.addWidget(注)
+            else:
+                文 = QLabel(项["文字"])
+                文.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                层.addWidget(文)
+            状态, 说明 = 项["飞书"]
+            尾 = QHBoxLayout()
+            尾.addWidget(QLabel(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else "")), 1)
+            if 项.get("附件"):
+                b = QPushButton("打开 Excel")
+                b.clicked.connect(lambda _=False, p=项["附件"]: os.startfile(p))
+                尾.addWidget(b)
+            层.addLayout(尾)
+            线 = QLabel("")
+            线.setStyleSheet("border-bottom:1px solid #ccc")
+            层.addWidget(线)
+        层.addStretch(1)
+        self.结果区.setWidget(面板)
 
     def _运行出错(self, 详情):
         运行记录.观察者 = None
@@ -403,55 +483,6 @@ class 主窗口(QMainWindow):
     # ---------- 设置 ----------
     def 设置飞书(self):
         飞书设置窗口(self).exec()
-
-    def 设置消息格式(self):
-        from 公共.消息格式 import 格式目录
-        名们 = sorted(p.stem for p in 格式目录.glob("*.txt"))
-        if not 名们:
-            QMessageBox.information(self, "没有格式文件", "格式 文件夹里还没有格式文件。")
-            return
-        名 = 名们[0]
-        if len(名们) > 1:
-            名, ok = QInputDialog.getItem(self, "设置消息格式", "要改哪个模块的消息格式？", 名们, 0, False)
-            if not ok:
-                return
-        self._格式模块 = 名
-        self._记事本 = subprocess.Popen(["notepad.exe", str(格式目录 / f"{名}.txt")])
-        self.statusBar().showMessage(f"已用记事本打开 格式\\{名}.txt：改好后保存（Ctrl+S）并关掉记事本，这里会自动预览。")
-        self._格式计时 = QTimer(self)
-        self._格式计时.timeout.connect(self._等记事本)
-        self._格式计时.start(500)
-
-    def _等记事本(self):
-        if self._记事本.poll() is None:
-            return
-        self._格式计时.stop()
-        self.statusBar().clearMessage()
-        import importlib
-        from 公共.消息格式 import 格式目录, 格式错误, 排版
-        from 公共.设置消息格式 import 最近结果
-        名 = self._格式模块
-        模块 = importlib.import_module(f"模块.{名}")
-        结果, 来源 = 最近结果(名)
-        公共, 区域列表 = 模块.排版内容(结果, 用时=15)
-        try:
-            排版((格式目录 / f"{名}.txt").read_text(encoding="utf-8-sig"), 公共, 区域列表)
-        except 格式错误 as e:
-            答 = QMessageBox.warning(self, "格式写错了", f"✘ {e}\n\n不改的话，查询时会继续用上一次能用的格式，查询不会失败。\n\n现在再打开改一下吗？",
-                                    QMessageBox.Yes | QMessageBox.No)
-            if 答 == QMessageBox.Yes:
-                self.设置消息格式()
-            return
-        消息, _ = 模块.组成消息(结果, "（预览）", 用时=15)
-        框 = QMessageBox(self)
-        框.setWindowTitle("消息格式预览")
-        框.setText(f"✔ 格式没问题。下面是用{来源}排出来的样子：\n\n{消息}")
-        发 = 框.addButton("发一条【测试】预览到飞书", QMessageBox.ActionRole) if 飞书.可以发送() else None
-        框.addButton("好", QMessageBox.AcceptRole)
-        框.exec()
-        if 发 is not None and 框.clickedButton() is 发:
-            状态, 说明 = 飞书.发送("【测试】格式预览\n" + 消息)
-            QMessageBox.information(self, "飞书", f"飞书：{状态}（{说明}）")
 
     def 登录WMS(self):
         if self.运行中:
