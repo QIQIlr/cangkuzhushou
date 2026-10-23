@@ -1,8 +1,9 @@
 # 职责：仓库助手 窗口版（测试版）。双击 仓库助手（测试版）.vbs 打开，不出现黑色命令行窗口。
 # 内容：左边模块列表（勾选=启用，拖动或上移/下移=调顺序，改动立即保存到 模块设置.txt）；
 #       右边运行按钮、进度、运行过程、结果（和发到飞书的一样）、打开日志；
-#       下面设置：飞书、登录 WMS。
-# 说明：查询在后台线程里跑，窗口不会卡住；掉线时弹窗请你登录。
+#       下面设置：飞书、登录 WMS、登录飞书。
+# 说明：查询在后台线程里跑，窗口不会卡住；掉线时弹窗请你登录；
+#       飞书任务明细运行中会弹出“选择要读取的任务”窗口。
 #       业务逻辑全部复用 公共\运行.py 和各模块，这里只是“外壳”。
 import os
 import re
@@ -40,12 +41,14 @@ class 传话(QObject):
     全部完成 = Signal(object)
     出错 = Signal(str)
     需要登录 = Signal(int)
+    需要选择 = Signal(object)
 
 
 class 可复制表格(QTableWidget):
-    """结果表格：只读；单击选中一格，Ctrl+C 或双击就把这一格的内容复制到剪贴板，状态栏提示“已复制 XXX”。"""
+    """结果表格：只读；单击选中一格，Ctrl+C 或双击就把这一格的内容复制到剪贴板，状态栏提示“已复制 XXX”。
+    多行=True：文字靠左靠上、自动换行、表格按内容撑开高度（飞书任务明细这种“项目｜内容”的表用）。"""
 
-    def __init__(self, 列名, 行们, 状态栏):
+    def __init__(self, 列名, 行们, 状态栏, 多行=False):
         super().__init__(len(行们), len(列名))
         self.状态栏 = 状态栏
         self.setHorizontalHeaderLabels(列名)
@@ -59,18 +62,46 @@ class 可复制表格(QTableWidget):
             加粗 = any(str(x).startswith("**") for x in 行)
             for c, 值 in enumerate(行):
                 格 = QTableWidgetItem(str(值).replace("**", ""))
-                格.setTextAlignment((Qt.AlignLeft if c == 0 or isinstance(值, str) and "-" in str(值) else Qt.AlignRight) | Qt.AlignVCenter)
+                if 多行:
+                    格.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
+                else:
+                    格.setTextAlignment((Qt.AlignLeft if c == 0 or isinstance(值, str) and "-" in str(值) else Qt.AlignRight) | Qt.AlignVCenter)
                 if 加粗:
                     格.setFont(粗体)
                 if "⚠" in str(值) or str(值) == "失败":
                     格.setForeground(Qt.darkRed)
                 self.setItem(r, c, 格)
-        self.resizeColumnsToContents()
-        self.horizontalHeader().setStretchLastSection(True)
-        高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(min(len(行们), 15))) + 6
-        self.setMinimumHeight(min(高, 460))
-        self.setMaximumHeight(高 if len(行们) <= 15 else 460)
+        self.多行 = 多行
+        if 多行:
+            self.setWordWrap(True)
+            self.resizeColumnToContents(0)
+            self.horizontalHeader().setStretchLastSection(True)
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self._按宽度排行(620)
+        else:
+            self.resizeColumnsToContents()
+            self.horizontalHeader().setStretchLastSection(True)
+            高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(min(len(行们), 15))) + 6
+            self.setMinimumHeight(min(高, 460))
+            self.setMaximumHeight(高 if len(行们) <= 15 else 460)
         self.itemDoubleClicked.connect(lambda _: self.复制())
+
+    def _按宽度排行(self, 内容宽):
+        """多行表：最后一列宽度跟着窗口走，按这个宽度自动换行，再把整个表格撑到正好放下所有行。"""
+        if self.columnCount() > 1:
+            self.setColumnWidth(self.columnCount() - 1, max(200, 内容宽))
+        self.resizeRowsToContents()
+        高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(self.rowCount())) + 2 * self.frameWidth() + 2
+        self.setMinimumHeight(高)
+        self.setMaximumHeight(高)
+
+    def resizeEvent(self, 事件):
+        super().resizeEvent(事件)
+        if getattr(self, "多行", False):
+            宽 = self.viewport().width() - sum(self.columnWidth(c) for c in range(self.columnCount() - 1))
+            if abs(宽 - self.columnWidth(self.columnCount() - 1)) > 4:
+                self._按宽度排行(宽)
 
     def keyPressEvent(self, 事件):
         if 事件.matches(QKeySequence.Copy):
@@ -156,6 +187,60 @@ class 分组视图(QWidget):
         单号们, 文字 = self.明细[self.当前区]
         QApplication.clipboard().setText(文字)
         self.状态栏.showMessage(f"已复制 {self.当前区} {len(单号们)} 个单号", 5000)
+
+
+class 任务选择窗口(QDialog):
+    """飞书任务明细：按飞书“我负责的”里的顺序列出全部标题，点一行勾选/取消，再点“开始读取”。
+    不分组、不排序、默认不勾（小柒 2026-10-24 确认）。"""
+
+    def __init__(self, 父, 清单):
+        super().__init__(父)
+        self.setWindowTitle("飞书任务明细：选择要读取的任务")
+        self.resize(1000, 660)
+        层 = QVBoxLayout(self)
+        行们, 应有 = 清单["行们"], 清单.get("应有")
+        头 = QLabel(f"“我负责的”共读到 {len(行们)} 条" + (f"，和页面显示的 {应有} 条一致 ✔" if 应有 == len(行们) else ""))
+        头.setStyleSheet("font-weight:bold; font-size:11pt")
+        层.addWidget(头)
+        for 句 in 清单.get("提醒", []):
+            注 = QLabel(句)
+            注.setWordWrap(True)
+            注.setStyleSheet("color:#b35c00")
+            层.addWidget(注)
+        层.addWidget(QLabel("按飞书里的顺序列出。点一行就勾选或取消（可以选多条），再点“开始读取”。每条大约 6～11 秒。"))
+        self.列表 = QListWidget()
+        self.列表.setStyleSheet("QListWidget::item { padding: 5px 2px; border-bottom: 1px solid #e6e6e6; }")
+        位数 = len(str(len(行们)))
+        for i, (编号, 标题, _) in enumerate(行们, 1):
+            项 = QListWidgetItem(f"{str(i).rjust(位数)}.  {标题}")
+            项.setData(Qt.UserRole, 编号)
+            项.setToolTip(标题)
+            项.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            项.setCheckState(Qt.Unchecked)
+            self.列表.addItem(项)
+        self.列表.itemClicked.connect(self._切换)
+        层.addWidget(self.列表, 1)
+        行 = QHBoxLayout()
+        self.开始 = QPushButton("开始读取（已选 0 条）")
+        self.开始.setEnabled(False)
+        self.开始.setMinimumHeight(36)
+        self.开始.clicked.connect(self.accept)
+        取消 = QPushButton("取消（这次不读）")
+        取消.clicked.connect(self.reject)
+        行.addStretch(1)
+        行.addWidget(取消)
+        行.addWidget(self.开始)
+        层.addLayout(行)
+
+    def _切换(self, 项):
+        项.setCheckState(Qt.Unchecked if 项.checkState() == Qt.Checked else Qt.Checked)
+        数 = len(self.选中())
+        self.开始.setText(f"开始读取（已选 {数} 条）")
+        self.开始.setEnabled(数 > 0)
+
+    def 选中(self):
+        return [self.列表.item(i).data(Qt.UserRole) for i in range(self.列表.count())
+                if self.列表.item(i).checkState() == Qt.Checked]
 
 
 class 飞书设置窗口(QDialog):
@@ -273,6 +358,8 @@ class 主窗口(QMainWindow):
         self.本次日志 = None
         self.登录回答 = None
         self.登录事件 = threading.Event()
+        self.选择回答 = None
+        self.选择事件 = threading.Event()
         self.传话 = 传话()
         self.传话.步骤.connect(self._显示步骤)
         self.传话.开始模块.connect(self._开始模块)
@@ -280,6 +367,7 @@ class 主窗口(QMainWindow):
         self.传话.全部完成.connect(self._全部完成)
         self.传话.出错.connect(self._运行出错)
         self.传话.需要登录.connect(self._请登录)
+        self.传话.需要选择.connect(self._请选择)
         self._搭界面()
         self.刷新模块()
 
@@ -363,7 +451,8 @@ class 主窗口(QMainWindow):
         设置框 = QGroupBox("设置")
         设 = QHBoxLayout(设置框)
         for 文字, 函数 in (("设置飞书", self.设置飞书),
-                         ("登录 WMS", self.登录WMS), ("打开日志文件夹", lambda: os.startfile(日志根)),
+                         ("登录 WMS", self.登录WMS), ("登录飞书", self.登录飞书),
+                         ("打开日志文件夹", lambda: os.startfile(日志根)),
                          ("刷新模块列表", self.刷新模块)):
             b = QPushButton(文字)
             b.clicked.connect(函数)
@@ -443,7 +532,7 @@ class 主窗口(QMainWindow):
         self.开本次日志按钮.setEnabled(False)
         self.进度条.setMaximum(len(名列表))
         self.进度条.setValue(0)
-        self.进度文字.setText("正在打开 WMS ……")
+        self.进度文字.setText("正在打开浏览器 ……")
         self.过程.appendPlainText(f"{datetime.now():%H:%M:%S} 开始：{' → '.join(名列表)}")
         运行记录.观察者 = lambda 模块名, 文字: self.传话.步骤.emit(模块名, 文字)
         self._本次发送 = self.自动发.isChecked() and not 测试不发送   # 在窗口线程里读好，后台线程只用这个值
@@ -453,7 +542,7 @@ class 主窗口(QMainWindow):
         try:
             from 公共.运行 import 运行模块们
             总结 = 运行模块们(名列表, 发送=self._本次发送, 显示=False, 等待登录=self._等登录,
-                          回报=lambda 事件, 内容: self._回报(事件, 内容))
+                          回报=lambda 事件, 内容: self._回报(事件, 内容), 选择=self._等选择)
             self.传话.全部完成.emit(总结)
         except Exception:
             self.传话.出错.emit(traceback.format_exc())
@@ -520,8 +609,12 @@ class 主窗口(QMainWindow):
                     if not 行们:
                         continue
                     if len(项["表们"]) > 1:
-                        层.addWidget(QLabel(表名))
-                    层.addWidget(可复制表格(列名, 行们, self.statusBar()))
+                        名 = QLabel(表名)
+                        名.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                        if 项.get("左对齐多行"):
+                            名.setStyleSheet("font-weight:bold; margin-top:8px")
+                        层.addWidget(名)
+                    层.addWidget(可复制表格(列名, 行们, self.statusBar(), 多行=bool(项.get("左对齐多行"))))
                 for 句 in 项.get("备注", []):
                     注 = QLabel(句)
                     注.setWordWrap(True)
@@ -607,6 +700,23 @@ class 主窗口(QMainWindow):
         self.登录回答 = 框.clickedButton() is 好了
         self.登录事件.set()
 
+    # ---------- 运行中勾选（飞书任务明细） ----------
+    def _等选择(self, 清单):
+        """后台线程调用：请窗口弹出勾选窗口，等人选好。返回勾选的编号列表；取消返回 None。"""
+        self.选择事件.clear()
+        self.传话.需要选择.emit(清单)
+        self.选择事件.wait()
+        return self.选择回答
+
+    def _请选择(self, 清单):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        QApplication.alert(self)
+        窗 = 任务选择窗口(self, 清单)
+        self.选择回答 = 窗.选中() if 窗.exec() == QDialog.Accepted else None
+        self.选择事件.set()
+
     # ---------- 设置 ----------
     def 设置飞书(self):
         飞书设置窗口(self).exec()
@@ -620,6 +730,19 @@ class 主窗口(QMainWindow):
             return
         subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
         QMessageBox.information(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
+
+    def 登录飞书(self):
+        if self.运行中:
+            QMessageBox.information(self, "正在运行", "正在运行中，请等运行完再登录。")
+            return
+        if 专用窗口开着():
+            QMessageBox.information(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
+            return
+        from 公共.飞书网页 import 任务列表网址
+        subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", 任务列表网址])
+        QMessageBox.information(self, "登录飞书", "已打开自动化专用 Chrome，进入飞书“我负责的”任务页。\n"
+                                "如果出现登录页，请扫码或输入账号登录；看到任务列表就说明登录好了。\n"
+                                "然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
 
     # ---------- 关闭 ----------
     def closeEvent(self, 事件):

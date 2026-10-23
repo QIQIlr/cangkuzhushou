@@ -14,12 +14,14 @@
 #   失败结果(错误, 开始时间, 参数)    还没开始查就失败时，给出一份“失败”结果
 #   组成消息(结果, 日志文件夹名, 用时) -> (消息, 格式问题)
 #       消息是文字；或者是 {"文字", "卡片" 或 "卡片们"（多张）, "附件"(Excel), "表们"[(表名, 列名, 行们)], "备注", "标题"}
+#   网站 = "飞书"                    可选；不写就是 WMS。只有飞书类模块时，不打开 WMS、不检查 WMS 登录
+#   需要选择 = True                  可选；运行中要弹窗让人勾选时，运行() 会多收到一个 选择 参数
 import importlib
 import time
 from datetime import datetime
 
 from 公共 import 模块参数, 飞书
-from 公共.wms import WMS首页, 打开WMS
+from 公共.wms import WMS首页, 打开WMS, 启动浏览器
 from 公共.日志 import 运行记录
 from 公共.错误 import 自动化错误, 归类, 程序出错
 
@@ -40,8 +42,9 @@ def _失败(模块, 错误, 开始, 参数):
     return 模块.失败结果(错误, 开始, 参数)
 
 
-def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登录=None, 回报=None, 测试=None):
+def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登录=None, 回报=None, 测试=None, 选择=None):
     """回报(事件, 内容)：窗口版用来显示进度。事件有 开始模块 / 模块完成。
+    选择(清单)：窗口版用来弹出勾选窗口（只有 需要选择=True 的模块会用）。
     测试=True（或环境变量 仓库助手_测试=1）：发出去的卡片和文字标题前都加“【测试】”。
     Claude 自测、验证时必须用测试=True；只有小柒自己在窗口/菜单里运行时才发正式消息。"""
     import os
@@ -65,20 +68,27 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
             except Exception:
                 pass
 
+    预载 = {名: 载入模块(名) for 名 in 名列表}
+    需要WMS = any(模块 is None or getattr(模块, "网站", "WMS") == "WMS" for 模块, _, _ in 预载.values())
     try:
         with sync_playwright() as p:
             浏览器 = 页面 = None
             打开失败 = None
             首个记录 = 主控 or 运行记录(名列表[0], 方式)
             try:
-                with 首个记录.步骤("打开 WMS 并检查登录"):
-                    浏览器, 页面 = 打开WMS(p, 可见=可见, 记录=首个记录, 等待登录=等待登录)
+                if 需要WMS:
+                    with 首个记录.步骤("打开 WMS 并检查登录"):
+                        浏览器, 页面 = 打开WMS(p, 可见=可见, 记录=首个记录, 等待登录=等待登录)
+                else:
+                    with 首个记录.步骤("打开自动化专用 Chrome"):
+                        浏览器, 页面 = 启动浏览器(p, 可见)
+                        首个记录.页面 = 页面
             except 自动化错误 as e:
                 打开失败 = e
             for 序号, 名 in enumerate(名列表, 1):
                 打印(f"\n▶ [{序号}/{len(名列表)}] {名} ……")
                 通知("开始模块", (序号, len(名列表), 名))
-                模块, 参数, 载入错误 = 载入模块(名)
+                模块, 参数, 载入错误 = 预载[名]
                 记录 = 首个记录 if not 多个 else 运行记录(名, 方式)
                 模块开始 = datetime.now()
                 if 页面 is not None:
@@ -91,12 +101,15 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
                     结果 = _失败(模块, 错误, 模块开始, 参数)
                 else:
                     try:
-                        if 多个:
+                        if 多个 and getattr(模块, "网站", "WMS") == "WMS":
                             with 记录.步骤("回到 WMS 首页并刷新"):
                                 页面.goto(WMS首页)
                                 页面.reload()
                                 页面.locator(".el-menu").first.wait_for(timeout=15000)
-                        结果 = 模块.运行(页面, 记录, 参数)
+                        if getattr(模块, "需要选择", False):
+                            结果 = 模块.运行(页面, 记录, 参数, 选择=选择)
+                        else:
+                            结果 = 模块.运行(页面, 记录, 参数)
                     except 自动化错误 as e:
                         结果 = _失败(模块, e, 模块开始, 参数)
                     except Exception as 原始:   # 模块里没想到的错误，也要留下现场
