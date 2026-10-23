@@ -217,6 +217,19 @@ class 模块设置窗口(QDialog):
         self.setMinimumWidth(420)
         层 = QVBoxLayout(self)
         self.区域框 = {}
+        self.范围框 = {}
+        if "查询范围" in self.参数:
+            from 公共.待处理 import 仓库, 范围选项
+            组 = QGroupBox("查询范围（每个勾选项单独一张表、一张飞书卡片）")
+            格 = QVBoxLayout(组)
+            for 名 in 范围选项:
+                说明 = f"{名}（{' + '.join(仓库[名])}）" if 名 in 仓库 else (f"{名}（测试区）" if 名 == "B区" else f"{名}（单独）")
+                框 = QCheckBox(说明)
+                框.setChecked(名 in self.参数["查询范围"])
+                self.范围框[名] = 框
+                格.addWidget(框)
+            层.addWidget(组)
+            层.addWidget(QLabel("一般勾仓库就行；想单独看某个区时再勾那个区。"))
         if "区域" in self.参数:
             组 = QGroupBox("查询区域（勾选要查的区域；表格/结果按这里的顺序）")
             行 = QHBoxLayout(组)
@@ -244,6 +257,12 @@ class 模块设置窗口(QDialog):
         层.addWidget(保存)
 
     def 保存(self):
+        if self.范围框:
+            选中 = [名 for 名, 框 in self.范围框.items() if 框.isChecked()]
+            if not 选中:
+                QMessageBox.warning(self, "至少选一个", "请至少勾选一个仓库或区域。")
+                return
+            self.参数["查询范围"] = 选中
         if self.区域框:
             选中 = [区 for 区, 框 in self.区域框.items() if 框.isChecked()]
             if not 选中:
