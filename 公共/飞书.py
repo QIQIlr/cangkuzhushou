@@ -6,6 +6,7 @@
 #   - 未知：超时或断网，不知道发没发出去——不会自动重发，请到群里看一眼
 # 安全：Webhook 地址只存在 密钥.env，绝不打印、不写日志。
 import json
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -13,6 +14,7 @@ from pathlib import Path
 
 根目录 = Path(__file__).resolve().parent.parent
 密钥文件 = 根目录 / "密钥.env"
+格式 = re.compile(r"^https://open\.(feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/[\w-]+$")   # Webhook 地址的样子
 
 _错误码说明 = {
     19024: "消息里没有机器人的自定义关键词（关键词不对）",
@@ -43,7 +45,7 @@ def 写设置(新设置):
 
 
 def 可以发送():
-    """设置飞书.bat 测试成功后才会自动发送。"""
+    """在窗口里“设置飞书”测试成功后才会自动发送。"""
     设置 = 读设置()
     return bool(设置.get("飞书Webhook")) and 设置.get("飞书已测通") == "是"
 
@@ -53,7 +55,7 @@ def 发送(消息, 网址=None, 关键词=None, 超时秒=10):
     网址 = 网址 or 设置.get("飞书Webhook", "")
     关键词 = 设置.get("飞书关键词", "") if 关键词 is None else 关键词
     if not 网址:
-        return "失败", "还没有设置飞书：请双击 设置飞书.bat"
+        return "失败", "还没有设置飞书：请在仓库助手里点“设置飞书”"
     if 关键词 and 关键词 not in 消息:
         消息 = f"{消息}\n—— {关键词}"
     return _投递(网址, {"msg_type": "text", "content": {"text": 消息}}, 超时秒)
@@ -94,7 +96,7 @@ def _投递(网址, 内容体, 超时秒):
             return "未知", f"{超时秒} 秒没有回应，不确定是否发出，请到飞书群里看一眼（不会自动重发）"
         return "失败", f"连不上飞书（网络问题）：{e.reason}"
     except ValueError:
-        return "失败", "Webhook 地址格式不对，请重新运行 设置飞书.bat"
+        return "失败", "Webhook 地址格式不对，请在仓库助手里点“设置飞书”重新填"
     try:
         结果 = json.loads(内容)
     except Exception:

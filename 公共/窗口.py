@@ -182,9 +182,8 @@ class 飞书设置窗口(QDialog):
         层.addWidget(按钮)
 
     def 测试(self):
-        from 公共.设置飞书 import 格式
         网址 = self.网址.text().strip()
-        if not 格式.match(网址):
+        if not 飞书.格式.match(网址):
             QMessageBox.warning(self, "地址不对", "这不像飞书 Webhook 地址，应该以\nhttps://open.feishu.cn/open-apis/bot/v2/hook/ 开头。")
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
