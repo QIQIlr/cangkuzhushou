@@ -40,8 +40,13 @@ def _失败(模块, 错误, 开始, 参数):
     return 模块.失败结果(错误, 开始, 参数)
 
 
-def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登录=None, 回报=None):
-    """回报(事件, 内容)：窗口版用来显示进度。事件有 开始模块 / 模块完成。"""
+def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登录=None, 回报=None, 测试=None):
+    """回报(事件, 内容)：窗口版用来显示进度。事件有 开始模块 / 模块完成。
+    测试=True（或环境变量 仓库助手_测试=1）：发出去的卡片和文字标题前都加“【测试】”。
+    Claude 自测、验证时必须用测试=True；只有小柒自己在窗口/菜单里运行时才发正式消息。"""
+    import os
+    if 测试 is None:
+        测试 = os.environ.get("仓库助手_测试") == "1"
     from playwright.sync_api import sync_playwright
     开始 = datetime.now()
     方式 = ("可见窗口" if 可见 else "后台") + ("，可发飞书" if 发送 else "，不发飞书")
@@ -134,6 +139,10 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
             分组 = 消息.get("分组")
         else:
             文字 = 消息
+        if 测试:   # 自测、验证时发的消息一律标【测试】，和小柒自己运行的正式结果区分开
+            for 卡 in 卡片们:
+                卡["header"]["title"]["content"] = "【测试】" + 卡["header"]["title"]["content"]
+            文字 = "【测试】" + 文字
 
         if not 发送:
             发送状态, 发送说明 = "未发送", "本次选择不发送"
