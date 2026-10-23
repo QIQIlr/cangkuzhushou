@@ -20,47 +20,13 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(根目录))
 from 公共.wms import 进入页面  # noqa: E402
 from 公共 import 表格  # noqa: E402
+from 公共.表单 import 下拉选择, 清空日期  # noqa: E402
 from 公共.错误 import 自动化错误, 归类, 页面改版, 网络超时, 数据不完整  # noqa: E402
 
 模块名 = "无任务包裹"
 查询接口 = "selectAllPage"   # 包裹管理页面查询时，网址里带的这段文字
 默认参数 = {"区域": ["D区", "E区"], "发到飞书": True}
 每页条数 = 30
-
-def _表单项(页面, 名称):
-    return 页面.locator(".vxe-form--item-inner").filter(
-        has=页面.locator(".vxe-form--item-title-label").filter(has_text=re.compile("^" + 名称 + "$"))).first
-
-
-def _下拉选择(页面, 名称, 选项):
-    框 = _表单项(页面, 名称)
-    if 框.count() == 0:
-        raise 自动化错误(页面改版, f"查询条件里找不到“{名称}”。")
-    框.locator(".el-select").click()
-    页面.wait_for_timeout(500)
-    项 = 页面.locator(".el-select-dropdown__item:visible").filter(has_text=re.compile("^" + 选项 + "$")).first
-    if 项.count() == 0:
-        页面.keyboard.press("Escape")
-        raise 自动化错误(页面改版, f"“{名称}”下拉里找不到“{选项}”。")
-    项.click()
-    页面.wait_for_timeout(300)
-
-
-def _清空签收时间(页面):
-    日期 = _表单项(页面, "签收时间")
-    if 日期.count() == 0:
-        raise 自动化错误(页面改版, "查询条件里找不到“签收时间”。")
-    叉 = 日期.locator(".el-range__close-icon")
-    for _ in range(5):   # 小叉只在鼠标停在上面时出现，所以多试几次
-        页面.mouse.move(0, 0)
-        日期.locator(".el-date-editor").hover()
-        页面.wait_for_timeout(400)
-        if "hidden" not in (叉.get_attribute("class") or ""):
-            break
-    叉.click(timeout=5000)
-    页面.wait_for_timeout(300)
-    if any(框.input_value() for 框 in 日期.locator("input").all()):
-        raise 自动化错误(页面改版, "“签收时间”没有清空。")
 
 
 def _等查询结果(页面, 动作, 页码=1):
@@ -85,7 +51,7 @@ def _等查询结果(页面, 动作, 页码=1):
 
 def 查询一个区域(页面, 区域, 记录=None):
     """在已设好“已挂起 / 无任务 / 无签收时间”的页面上，查一个区域，返回 (状态, 总数, 单号列表, 说明)。"""
-    _下拉选择(页面, "区域", 区域)
+    下拉选择(页面, "区域", 区域)
     参数, 数据 = _等查询结果(页面, lambda: 页面.get_by_role("button", name="查询").first.click())
 
     # 核对：查询条件确实是我们要的
@@ -145,9 +111,9 @@ def 运行(页面, 记录, 参数=None):
             页面.get_by_text("展开").first.click()
             页面.wait_for_timeout(800)
         with 记录.步骤("任务小类选“无任务”"):
-            _下拉选择(页面, "任务小类", "无任务")
+            下拉选择(页面, "任务小类", "无任务")
         with 记录.步骤("清空“签收时间”"):
-            _清空签收时间(页面)
+            清空日期(页面, "签收时间")
     except 自动化错误 as e:
         return 失败结果(e, 开始时间, 参数)
 
