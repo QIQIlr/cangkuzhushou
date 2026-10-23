@@ -238,7 +238,7 @@ class 模块设置窗口(QDialog):
                 self.区域框[区] = 框
                 行.addWidget(框)
             层.addWidget(组)
-            层.addWidget(QLabel("区域选项来自 WMS 的“所属区域”下拉（运行增值待处理时会自动更新）。"))
+            层.addWidget(QLabel("区域选项来自 WMS 的“所属区域”下拉（运行待审核、待拣货、待增值时会自动更新）。"))
         self.发送框 = QCheckBox("结果发到飞书")
         self.发送框.setChecked(self.参数.get("发到飞书", True))
         层.addWidget(self.发送框)
