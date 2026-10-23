@@ -18,7 +18,7 @@ sys.path.insert(0, str(根目录))
 
 from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
 from PySide6.QtGui import QFont, QKeySequence  # noqa: E402
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog, QFormLayout, QGroupBox, QSpinBox,  # noqa: E402
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog, QFormLayout, QGroupBox,  # noqa: E402
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem,
@@ -200,7 +200,7 @@ class 飞书设置窗口(QDialog):
 
 
 class 模块设置窗口(QDialog):
-    """一个模块自己的设置：查询区域、发到飞书、往前天数（模块有这项时）。改完点“保存”。"""
+    """一个模块自己的设置：查询区域或查询范围（模块有这项时）、发到飞书。改完点“保存”。"""
 
     def __init__(self, 父, 模块名):
         super().__init__(父)
@@ -242,15 +242,6 @@ class 模块设置窗口(QDialog):
         self.发送框 = QCheckBox("结果发到飞书")
         self.发送框.setChecked(self.参数.get("发到飞书", True))
         层.addWidget(self.发送框)
-        self.天数框 = None
-        if "往前天数" in self.参数:
-            行 = QHBoxLayout()
-            行.addWidget(QLabel("除今天外，再往前查几个自然日："))
-            self.天数框 = QSpinBox()
-            self.天数框.setRange(1, 9)   # 加上今天、更早、合计，表格最多 12 行
-            self.天数框.setValue(int(self.参数["往前天数"]))
-            行.addWidget(self.天数框)
-            层.addLayout(行)
         保存 = QPushButton("保存")
         保存.clicked.connect(self.保存)
         层.addWidget(保存)
@@ -269,8 +260,6 @@ class 模块设置窗口(QDialog):
                 return
             self.参数["区域"] = 选中
         self.参数["发到飞书"] = self.发送框.isChecked()
-        if self.天数框:
-            self.参数["往前天数"] = self.天数框.value()
         self.模块参数.保存(self.模块名, self.参数)
         self.accept()
 
