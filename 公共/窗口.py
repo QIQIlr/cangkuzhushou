@@ -313,6 +313,12 @@ class 主窗口(QMainWindow):
         self.运行选中按钮.clicked.connect(self.运行选中)
         左.addWidget(self.运行全部按钮)
         左.addWidget(self.运行选中按钮)
+        from 公共 import 模块参数
+        self.自动发 = QCheckBox("运行完自动发到飞书（按各模块的设置）")
+        self.自动发.setChecked(bool(模块参数.界面设置("运行完自动发飞书", True)))
+        self.自动发.toggled.connect(lambda 开: 模块参数.保存界面设置("运行完自动发飞书", 开))
+        左.addWidget(self.自动发)
+        左.addWidget(QLabel("不勾选时：结果只在窗口里显示，想发哪个就点那个结果下面的“发到飞书”。"))
         左.addWidget(QLabel("提示：按住 Ctrl 可以选多个；“只运行选中的”时，禁用的模块也会运行。"))
         分.addWidget(左框)
 
@@ -433,12 +439,13 @@ class 主窗口(QMainWindow):
         self.进度文字.setText("正在打开 WMS ……")
         self.过程.appendPlainText(f"{datetime.now():%H:%M:%S} 开始：{' → '.join(名列表)}")
         运行记录.观察者 = lambda 模块名, 文字: self.传话.步骤.emit(模块名, 文字)
+        self._本次发送 = self.自动发.isChecked() and not 测试不发送   # 在窗口线程里读好，后台线程只用这个值
         threading.Thread(target=self._后台运行, args=(名列表,), daemon=True).start()
 
     def _后台运行(self, 名列表):
         try:
             from 公共.运行 import 运行模块们
-            总结 = 运行模块们(名列表, 发送=not 测试不发送, 显示=False, 等待登录=self._等登录,
+            总结 = 运行模块们(名列表, 发送=self._本次发送, 显示=False, 等待登录=self._等登录,
                           回报=lambda 事件, 内容: self._回报(事件, 内容))
             self.传话.全部完成.emit(总结)
         except Exception:
@@ -520,7 +527,11 @@ class 主窗口(QMainWindow):
                 层.addWidget(文)
             状态, 说明 = 项["飞书"]
             尾 = QHBoxLayout()
-            尾.addWidget(QLabel(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else "")), 1)
+            飞书字 = QLabel(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else ""))
+            尾.addWidget(飞书字, 1)
+            发 = QPushButton("发到飞书" if 状态 != "成功" else "再发一次到飞书")
+            发.clicked.connect(lambda _=False, 项=项, 字=飞书字, 钮=发: self._手动发送(项, 字, 钮))
+            尾.addWidget(发)
             if 项.get("附件"):
                 b = QPushButton("打开 Excel")
                 b.clicked.connect(lambda _=False, p=项["附件"]: os.startfile(p))
@@ -531,6 +542,35 @@ class 主窗口(QMainWindow):
             层.addWidget(线)
         层.addStretch(1)
         self.结果区.setWidget(面板)
+
+    def _手动发送(self, 项, 字, 钮):
+        """把某个模块这次的结果发到飞书（运行时没发、或想再发一次时用）。发送情况记进这个模块的日志。"""
+        if not 飞书.可以发送():
+            QMessageBox.information(self, "飞书", "还没设置好飞书，请先点下面的“设置飞书”。")
+            return
+        之前 = 项["飞书"][0]
+        if 之前 in ("成功", "未知"):
+            提示 = "这个结果已经发到飞书了，确定要再发一次吗？" if 之前 == "成功" else \
+                "上次发送结果“未知”（可能已经发出去了）。请先到飞书群里看一眼。\n确定要再发一次吗？"
+            if QMessageBox.question(self, "再发一次？", 提示, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            状态, 说明 = 飞书.发送全部(项.get("卡片们") or [], 项["文字"])
+        finally:
+            QApplication.restoreOverrideCursor()
+        项["飞书"] = (状态, 说明)
+        字.setText(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else "（手动发送）"))
+        钮.setText("再发一次到飞书" if 状态 == "成功" else "发到飞书")
+        try:
+            from 公共.日志 import 遮掩
+            with open(Path(项["日志文件夹"]) / "运行记录.txt", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now():%H:%M:%S}] 窗口里手动发送飞书：{状态}（{遮掩(说明)}）\n")
+        except Exception:
+            pass
+        self.statusBar().showMessage(f"{项['模块']}：飞书 {状态}", 5000)
+        if 状态 != "成功":
+            QMessageBox.warning(self, "飞书没发成功", f"{状态}：{说明}")
 
     def _运行出错(self, 详情):
         运行记录.观察者 = None

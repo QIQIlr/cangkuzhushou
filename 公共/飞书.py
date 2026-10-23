@@ -104,3 +104,17 @@ def _投递(网址, 内容体, 超时秒):
         return "成功", "飞书已收到"
     原因 = _错误码说明.get(码, 结果.get("msg") or 结果.get("StatusMessage") or "未知原因")
     return "失败", f"飞书拒绝（错误码 {码}）：{原因}"
+
+
+def 发送全部(卡片们, 文字):
+    """有卡片就依次发卡片（每张隔 1 秒），没有就发文字。某张不成功就停下，返回 (状态, 说明)。"""
+    import time
+    if not 卡片们:
+        return 发送(文字)
+    for 张, 卡 in enumerate(卡片们, 1):
+        if 张 > 1:
+            time.sleep(1)
+        状, 说 = 发送卡片(卡)
+        if 状 != "成功":
+            return 状, (f"第 {张}/{len(卡片们)} 张：{说}" if len(卡片们) > 1 else 说)
+    return "成功", "飞书已收到"
