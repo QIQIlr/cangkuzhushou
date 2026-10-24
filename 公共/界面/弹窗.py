@@ -152,7 +152,8 @@ class 模块设置面板(QWidget):
     def 显示(self, 模块名, 说明=""):
         """换成某个模块的设置（模块名 = 原名；None = 空白提示）。"""
         if self.表 is not None:
-            self.表.setParent(None)
+            self.表.hide()
+            self.卡.层.removeWidget(self.表)
             self.表.deleteLater()
             self.表 = None
         self.模块名 = 模块名
@@ -162,7 +163,10 @@ class 模块设置面板(QWidget):
         from 公共 import 查询范围
         默认, self.可发, 模块说明 = 模块信息(模块名)
         self.参数 = 模块参数.读取(模块名, 默认)
-        self.表 = QWidget()
+        # 一闪而过的小窗口（小柒 2026-10-24 报）：以前新面板先不挂在卡片上就去设“显示”，
+        # 那些勾选框、文字就被 Windows 当成独立的小窗口弹出来一下。现在一开始就挂在卡片上、先藏着，搭好再显示。
+        self.表 = QWidget(self.卡)
+        self.表.hide()
         层 = QVBoxLayout(self.表)
         层.setContentsMargins(0, 0, 0, 0)
         层.setSpacing(8)
@@ -204,8 +208,8 @@ class 模块设置面板(QWidget):
         层.addWidget(self.改名提示)
         原名字 = 标签(f"原名：{模块名}（固定不变；改名只改显示的名字）", "说明", 换行=True)
         self.原名字 = 原名字
-        原名字.setVisible(模块参数.显示名(模块名) != 模块名)
         层.addWidget(原名字)
+        原名字.setVisible(模块参数.显示名(模块名) != 模块名)
         if 说明 or 模块说明:
             层.addWidget(标签(说明 or 模块说明, "说明", 换行=True))
         层.addWidget(分隔线())
@@ -234,7 +238,7 @@ class 模块设置面板(QWidget):
             内层.addWidget(标签("查询范围（每勾一项，单独出一张表）", "组名"))
             内层.addWidget(标签("仓库", "说明"))
             for 仓 in 查询范围.仓库:
-                框 = QCheckBox(查询范围.说明(仓))
+                框 = QCheckBox(查询范围.说明(仓), 内)
                 框.setChecked(仓 in 已选)
                 框.toggled.connect(self._改范围)
                 self.仓库框[仓] = 框
@@ -244,7 +248,7 @@ class 模块设置面板(QWidget):
             self.区格 = QGridLayout()
             self.区格.setHorizontalSpacing(16)
             for 区 in 查询范围.区域们():
-                框 = QCheckBox(查询范围.说明(区))
+                框 = QCheckBox(查询范围.说明(区), 内)
                 框.setChecked(区 in 已选)
                 框.toggled.connect(self._改范围)
                 self.区框[区] = 框
@@ -259,6 +263,7 @@ class 模块设置面板(QWidget):
         self.保存字 = 标签("改动会自动保存。", "说明")
         层.addWidget(self.保存字)
         self.卡.层.addWidget(self.表, 1)
+        self.表.show()
         self.更新飞书说明()
 
     # ---------- 名字 ----------

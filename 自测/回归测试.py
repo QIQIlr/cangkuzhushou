@@ -766,10 +766,48 @@ def 测_没选范围不跑():
         模块参数.参数文件.write_text(原, encoding="utf-8")
 
 
+def 测_不弹小窗口():
+    print("工作台：切换模块、勾选、改名时，不会一闪弹出小窗口")
+    from PySide6.QtCore import QEvent, QObject, Qt
+    from 公共.界面.工作台 import 工作台
+    原 = 模块参数.参数文件.read_text(encoding="utf-8")
+    应用()
+    w = 工作台(False)
+    w.setAttribute(Qt.WA_DontShowOnScreen)
+    w.show()
+    应用().processEvents()
+    弹出 = []
+
+    class 盯(QObject):
+        def eventFilter(self, o, e):
+            if e.type() == QEvent.Show and o.isWidgetType() and o.isWindow() and o is not w \
+                    and type(o).__name__ not in ("QToolTip", "QTipLabel"):
+                弹出.append(f"{type(o).__name__}：{o.text() if hasattr(o, 'text') else ''}")
+            return False
+    f = 盯()
+    应用().installEventFilter(f)
+    try:
+        for 轮 in range(2):
+            for i in range(w.列表.count()):
+                w.列表.setCurrentRow(i)
+                应用().processEvents()
+                面板 = w.面板
+                for 框 in list(面板.仓库框.values())[:1]:
+                    框.click()
+                    应用().processEvents()
+                    框.click()
+                    应用().processEvents()
+        检查("来回切换 5 个模块两轮、点仓库勾选：没有弹出任何小窗口", not 弹出, 弹出[:5])
+    finally:
+        应用().removeEventFilter(f)
+        w.close()
+        模块参数.参数文件.write_text(原, encoding="utf-8")
+
+
 部分 = {"设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
       "查询范围规则": 测_查询范围规则, "无任务包裹迁移": 测_无任务包裹迁移, "查询范围界面": 测_查询范围界面,
       "无任务包裹按仓库查": 测_无任务包裹按仓库查, "改名": 测_改名, "飞书开关": 测_飞书开关,
-      "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑}
+      "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑, "不弹小窗口": 测_不弹小窗口}
 
 
 def main():
