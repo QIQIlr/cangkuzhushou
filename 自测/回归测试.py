@@ -450,7 +450,7 @@ def 测_改名():
     备份 = 日志.总表.read_bytes() if 日志.总表.exists() else None
     r = 日志.运行记录("待审核", "自测", 测试=True)
     r.结束("成功", 1)
-    最新 = 运行历史.读全部([名 for 名, _ in 模块设置.读取(写回=False)[0]])[0]
+    最新 = next(x for x in 运行历史.读全部([名 for 名, _ in 模块设置.读取(写回=False)[0]]) if x["文件夹"] == r.文件夹名)
     检查("改名后的运行记录仍然对应 待审核", 最新["原名"] == "待审核" and 最新["名字"] == "审核积压", 最新)
     shutil.rmtree(r.文件夹, ignore_errors=True)
     if 备份 is not None:
@@ -751,15 +751,15 @@ def 测_没选范围不跑():
         w = 台.工作台(False)
         标 = {w.列表.item(i).data(Qt.UserRole): w.列表.item(i).data(台.范围角)[0] for i in range(w.列表.count())}
         检查("卡片上写“没选范围，不会跑”", 标["待审核"] == "没选范围，不会跑", 标)
-        # 双击模块：开始改名（以前这里会报错）
+        # 双击模块（以前这里会报错）：不报错，也不会跳到右边改名
         行号 = [w.列表.item(i).data(Qt.UserRole) for i in range(w.列表.count())].index("待审核")
         w.列表.setCurrentRow(行号)
         try:
             w.列表.itemDoubleClicked.emit(w.列表.item(行号))
-            好 = not w.面板.改名行.isHidden()
+            好 = w.面板.改名行.isHidden()
         except Exception:
             好 = traceback.format_exc()
-        检查("双击模块不报错，直接开始改名", 好 is True, 好)
+        检查("双击模块不报错，也不跳到右边改名", 好 is True, 好)
         w.close()
     finally:
         审.运行 = 原跑
@@ -804,10 +804,88 @@ def 测_不弹小窗口():
         模块参数.参数文件.write_text(原, encoding="utf-8")
 
 
+def 测_卡片原地改名():
+    print("卡片上双击粗体名字 = 原地改名；双击别处不做什么；和右边铅笔改的是同一个名字")
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QStyleOptionViewItem
+    from 公共.界面 import 工作台 as 台
+    原 = 模块参数.参数文件.read_text(encoding="utf-8")
+    应用()
+    w = 台.工作台(False)
+    w.setAttribute(Qt.WA_DontShowOnScreen)
+    w.resize(1180, 700)
+    w.show()
+    应用().processEvents()
+    名们 = [w.列表.item(i).data(Qt.UserRole) for i in range(w.列表.count())]
+    i = 名们.index("待审核")
+    项 = w.列表.item(i)
+    画法 = w.列表.itemDelegate()
+
+    def 选项():
+        o = QStyleOptionViewItem()
+        o.rect = w.列表.visualItemRect(项)
+        return o
+
+    def 编辑框():
+        return next((x for x in w.列表.findChildren(台.名字编辑框) if x.isVisible()), None)
+
+    def 双击(点):
+        QTest.mouseClick(w.列表.viewport(), Qt.LeftButton, Qt.NoModifier, 点)
+        QTest.mouseDClick(w.列表.viewport(), Qt.LeftButton, Qt.NoModifier, 点)
+        应用().processEvents()
+
+    名点 = 画法._名区(选项(), w.列表.model().index(i, 0)).center().toPoint()
+    右边点 = QPoint(w.列表.visualItemRect(项).right() - 60, w.列表.visualItemRect(项).center().y())
+    双击(右边点)
+    检查("双击卡片右边（不是名字）：不进入改名，右边也不跳", 编辑框() is None and w.面板.改名行.isHidden())
+    双击(名点)
+    框 = 编辑框()
+    检查("双击粗体名字：名字原地变成输入框，里面是现在的名字", 框 is not None and 框.text() == "待审核", 框 and 框.text())
+    QTest.keyClicks(框, "ab/c:d")          # 只能用英文字母模拟打字（测试工具不支持模拟中文按键）
+    检查("输入框打不进 / : 这种符号", 框.text() == "abcd", 框.text())
+    QTest.keyClick(框, Qt.Key_Escape)
+    应用().processEvents()
+    检查("Esc：不改，名字还是原来的", 模块参数.显示名("待审核") == "待审核" and 项.text() == "待审核" and 编辑框() is None)
+    双击(名点)
+    框 = 编辑框()
+    框.setText("审核积压")
+    QTest.keyClick(框, Qt.Key_Return)
+    应用().processEvents()
+    检查("回车：保存，卡片和右边面板马上都是新名字", 模块参数.显示名("待审核") == "审核积压" and 项.text() == "审核积压"
+         and w.面板.名字字.text() == "审核积压", (模块参数.显示名("待审核"), 项.text(), w.面板.名字字.text()))
+    双击(名点)
+    框 = 编辑框()
+    框.setText("待拣货")
+    QTest.keyClick(框, Qt.Key_Return)
+    应用().processEvents()
+    检查("和别的模块重名：不保存，右边写原因", 模块参数.显示名("待审核") == "审核积压" and "已经有" in w.面板.保存字.text(),
+         w.面板.保存字.text())
+    双击(名点)
+    框 = 编辑框()
+    框.setText("审核")
+    w.面板.名字框.setFocus()          # 点别处
+    w.列表.closeEditor(框, 台.QAbstractItemDelegate.SubmitModelCache) if hasattr(台, "QAbstractItemDelegate") else None
+    应用().processEvents()
+    if 模块参数.显示名("待审核") != "审核":    # 没有自动提交时，用和点别处一样的方式提交
+        画法.commitData.emit(框)
+        画法.closeEditor.emit(框)
+        应用().processEvents()
+    检查("点别处：也保存", 模块参数.显示名("待审核") == "审核" and 项.text() == "审核", 模块参数.显示名("待审核"))
+    # 右边铅笔改的是同一个名字
+    w.面板.开始改名()
+    w.面板.名字框.setText("待审核")
+    w.面板.保存名字()
+    应用().processEvents()
+    检查("右边铅笔改回原名：卡片也马上变回来", 模块参数.显示名("待审核") == "待审核" and 项.text() == "待审核")
+    w.close()
+    模块参数.参数文件.write_text(原, encoding="utf-8")
+
+
 部分 = {"设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
       "查询范围规则": 测_查询范围规则, "无任务包裹迁移": 测_无任务包裹迁移, "查询范围界面": 测_查询范围界面,
       "无任务包裹按仓库查": 测_无任务包裹按仓库查, "改名": 测_改名, "飞书开关": 测_飞书开关,
-      "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑, "不弹小窗口": 测_不弹小窗口}
+      "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑, "不弹小窗口": 测_不弹小窗口, "卡片原地改名": 测_卡片原地改名}
 
 
 def main():

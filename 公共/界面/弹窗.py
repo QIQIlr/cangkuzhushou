@@ -279,31 +279,38 @@ class 模块设置面板(QWidget):
         self.名字框.setFocus()
         self.名字框.selectAll()
 
-    def 聚焦(self):
-        """在左边双击模块：直接开始改名字。"""
-        self.开始改名()
-
     def 取消改名(self):
         self.改名行.setVisible(False)
         self.改名提示.setVisible(False)
         self.名字行.setVisible(True)
 
     def 保存名字(self):
-        新名 = self.名字框.text().strip()
-        if 新名 == 模块参数.显示名(self.模块名):
-            self.取消改名()
-            return
-        问题 = 模块参数.检查名字(self.模块名, 新名, 模块设置.所有模块())
+        问题 = self.应用新名字(self.模块名, self.名字框.text().strip())
         if 问题:
             self.改名提示.setText("没保存：" + 问题)
             self.改名提示.setStyleSheet(f"color:{色['坏']};")
             self.名字框.setFocus()
             return
-        模块参数.保存显示名(self.模块名, 新名)
-        self.名字字.setText(模块参数.显示名(self.模块名))
-        self.原名字.setVisible(模块参数.显示名(self.模块名) != self.模块名)
         self.取消改名()
-        self._已保存(f"名字已改成“{模块参数.显示名(self.模块名)}”")
+
+    def 应用新名字(self, 原名, 新名):
+        """改名的唯一入口（右边铅笔、左边卡片上双击名字都走这里）。返回 "" = 好了，或者一句没改的原因。"""
+        if 新名 == 模块参数.显示名(原名):
+            return ""
+        问题 = 模块参数.检查名字(原名, 新名, 模块设置.所有模块())
+        if 问题:
+            if 原名 == self.模块名 and self.表 is not None:
+                self.保存字.setText("没改名：" + 问题)
+                self.保存字.setStyleSheet(f"color:{色['坏']};")
+            return 问题
+        模块参数.保存显示名(原名, 新名)
+        if 原名 == self.模块名 and self.表 is not None:
+            self.名字字.setText(模块参数.显示名(原名))
+            self.原名字.setVisible(模块参数.显示名(原名) != 原名)
+            self._已保存(f"名字已改成“{模块参数.显示名(原名)}”")
+        else:
+            self.已保存.emit(原名)
+        return ""
 
     # ---------- 范围 ----------
     def _排范围(self):

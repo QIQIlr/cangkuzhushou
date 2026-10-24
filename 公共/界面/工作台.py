@@ -7,9 +7,9 @@
 # 参考：Taskless（右侧编辑面板、一个主按钮）、Norix（问候、需要注意清单）、Watchlist（卡片上一个大数字 + 一行小字）。
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QListWidget, QListWidgetItem, QStyle,
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QRegularExpression, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QRegularExpressionValidator
+from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QStyle, QToolTip,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from 公共 import 模块参数, 模块设置, 查询范围
@@ -64,8 +64,35 @@ def 范围文字(原名, 总开关):
     return 范围, 飞
 
 
+class 名字编辑框(QLineEdit):
+    """卡片上原地改名用的输入框：最多 20 个字，不能打 \\ / : * ? " < > |（Windows 文件名不允许，日志文件夹会用到名字）。"""
+
+    def __init__(self, 父):
+        super().__init__(父)
+        self.setMaxLength(模块参数.最长)
+        self.setValidator(QRegularExpressionValidator(QRegularExpression('[^\\\\/:*?"<>|]*'), self))
+        self.setFont(字(11, True))
+        self.setToolTip("回车或点别处 = 保存；Esc = 不改")
+
+
 class 模块卡片画法(QStyledItemDelegate):
-    """把列表的每一行画成一张卡片：拖动把手、开关、名字、说明、范围，右边是上次结果。"""
+    """把列表的每一行画成一张卡片：拖动把手、开关、名字、说明、范围，右边是上次结果。
+    双击粗体名字 = 原地改名（小柒 2026-10-24）：回车或点别处保存，Esc 不改。双击卡片其他地方不做什么。"""
+
+    def __init__(self, 父, 改名):
+        super().__init__(父)
+        self.改名 = 改名            # 改名(原名, 新名字)：工作台去检查、保存
+
+    def _名区(self, 选项, 索引=None, 编辑=False):
+        """粗体名字所在的位置。编辑=True 时给输入框留宽一点。"""
+        r, 开关区 = self._区(选项)
+        左 = 开关区.right() + 14
+        可用 = r.right() - 150 - 14 - 12 - 左
+        if 编辑:
+            return QRectF(左 - 6, r.top() + 7, min(260, 可用 + 6), 28).toRect()
+        名 = (索引.data(Qt.DisplayRole) or "") if 索引 is not None else ""
+        宽 = min(QFontMetrics(字(11, True)).horizontalAdvance(名) + 10, 可用)
+        return QRectF(左 - 4, r.top() + 8, 宽 + 8, 26)
 
     def sizeHint(self, 选项, 索引):
         return QSize(选项.rect.width(), 行高)
@@ -149,8 +176,27 @@ class 模块卡片画法(QStyledItemDelegate):
             x += 宽 + 6
         p.restore()
 
+    # ---- 原地改名 ----
+    def createEditor(self, 父, 选项, 索引):
+        return 名字编辑框(父)
+
+    def setEditorData(self, 编辑框, 索引):
+        编辑框.setText(索引.data(Qt.DisplayRole) or "")
+        编辑框.selectAll()
+
+    def updateEditorGeometry(self, 编辑框, 选项, 索引):
+        编辑框.setGeometry(self._名区(选项, 编辑=True))
+
+    def setModelData(self, 编辑框, 模型, 索引):
+        """回车或点别处：交给工作台检查、保存（卡片上的字由工作台在保存成功后更新）。"""
+        self.改名(索引.data(Qt.UserRole), 编辑框.text().strip(), 编辑框)
+
     def editorEvent(self, 事件, 模型, 选项, 索引):
-        """点开关 = 切换启用；空格键也可以。其他点击交给列表（选中、拖动、双击）。"""
+        """点开关 = 切换启用；空格键也可以。双击粗体名字 = 原地改名。其他点击交给列表（选中、拖动）。"""
+        if 事件.type() == QEvent.MouseButtonDblClick and 事件.button() == Qt.LeftButton:
+            if self._名区(选项, 索引).contains(事件.position()):
+                self.parent().edit(索引)
+            return True                     # 双击卡片其他地方：什么都不做
         if 事件.type() == QEvent.MouseButtonRelease and 事件.button() == Qt.LeftButton:
             _, 开关区 = self._区(选项)
             if 开关区.adjusted(-6, -8, 6, 8).contains(事件.position()):
@@ -232,7 +278,8 @@ class 工作台(QWidget):
         self.列表.setStyleSheet("QListWidget { border: none; background: transparent; }"
                                 "QListWidget::item, QListWidget::item:selected, QListWidget::item:hover "
                                 "{ background: transparent; }")
-        self.列表.setItemDelegate(模块卡片画法(self.列表))
+        self.列表.setItemDelegate(模块卡片画法(self.列表, self._卡片改名))
+        self.列表.setEditTriggers(QAbstractItemView.NoEditTriggers)   # 只有双击粗体名字才进入改名
         self.列表.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.列表.setDragDropMode(QAbstractItemView.InternalMove)
         self.列表.setDefaultDropAction(Qt.MoveAction)
@@ -242,7 +289,6 @@ class 工作台(QWidget):
         self.列表.itemChanged.connect(lambda _: self.保存模块())
         self.列表.model().rowsMoved.connect(lambda *_: self.保存模块())
         self.列表.currentItemChanged.connect(self._选中变了)
-        self.列表.itemDoubleClicked.connect(lambda _: self.面板.聚焦())
         模块卡.层.addWidget(self.列表, 1)
         模块卡.层.addWidget(标签("拖动卡片调整运行顺序（上面的先跑）· 点开关启用或停用 · 按住 Ctrl 可以选多个", "说明", 换行=True))
         左.addWidget(模块卡, 1)
@@ -276,7 +322,7 @@ class 工作台(QWidget):
             项.setData(范围角, 范围文字(名, self.自动发.isChecked()))
             项.setData(上次角, self.上次.get(名))
             项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
-            项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
+            项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled | Qt.ItemIsEditable)
             项.setFlags(项.flags() & ~Qt.ItemIsDropEnabled)
             项.setCheckState(Qt.Checked if 开 else Qt.Unchecked)
             self.列表.addItem(项)
@@ -339,6 +385,12 @@ class 工作台(QWidget):
                 项.setData(范围角, 范围文字(名, self.自动发.isChecked()))
                 项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
         self._更新飞书总述()
+
+    def _卡片改名(self, 原名, 新名, 编辑框=None):
+        """卡片上原地改名：和右边铅笔改的是同一个名字，检查规则也一样。"""
+        问题 = self.面板.应用新名字(原名, 新名)
+        if 问题 and 编辑框 is not None:
+            QToolTip.showText(编辑框.mapToGlobal(编辑框.rect().bottomLeft()), "没改名：" + 问题, self.列表)
 
     def _总开关变了(self, 开):
         for i in range(self.列表.count()):
