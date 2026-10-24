@@ -214,7 +214,7 @@ class 运行页(QWidget):
             if 项.data(Qt.UserRole) == 名 and 项.data(状态角) in ("运行中", "等待"):
                 项.setData(状态角, 结果["状态"])
                 项.setData(数字角, 结果.get("数量") if 结果["状态"] != "失败" else None)
-                self._换详情(i, 空白提示("勾" if 结果["状态"] in ("成功", "无数据") else "警告",
+                self._换详情(i, 空白提示("勾" if 结果["状态"] in ("成功", "无数据", "未运行") else "警告",
                                        f"{显示名(名)} 已经查完：{结果['状态']}", "正在整理结果……"))
                 break
 
@@ -245,7 +245,7 @@ class 运行页(QWidget):
         for 项 in 消息们:
             self.显示一个(项)
         if not self.用户点过:   # 有问题的先给人看：选中第一个失败/不完整的，没有就选第一个
-            先看 = next((i for i in range(self.列表.count()) if self.列表.item(i).data(状态角) not in ("成功", "无数据")), 0)
+            先看 = next((i for i in range(self.列表.count()) if self.列表.item(i).data(状态角) not in ("成功", "无数据", "未运行")), 0)
             self.列表.setCurrentRow(先看)
             self.详情.setCurrentIndex(先看)
 
@@ -265,7 +265,7 @@ class 运行页(QWidget):
         self.开始(名们, f"这是 {数据['开始']:%m/%d %H:%M} 那次运行的结果（打开仓库助手时自动显示）。")
         self.显示结果(结果们)
         没跑 = len(名们) - len(结果们)
-        有问题 = sum(1 for 项 in 结果们 if 项["状态"] not in ("成功", "无数据"))
+        有问题 = sum(1 for 项 in 结果们 if 项["状态"] not in ("成功", "无数据", "未运行"))
         self.进度条.setValue(len(结果们))
         self.计数.setText(f"{len(结果们)} / {len(名们)}")
         self.眉.setText(f"上一次运行 · {数据['开始']:%m/%d %H:%M} 开始 · " + " → ".join(map(显示名, 名们)))
@@ -278,7 +278,7 @@ class 运行页(QWidget):
             if i not in self.已显示:
                 self.列表.item(i).setData(状态角, "没跑到")
                 self._换详情(i, 空白提示("时钟", "那次没有跑到这个模块", "要看它的结果，到工作台运行一次。"))
-        先看 = next((i for i in sorted(self.已显示) if self.列表.item(i).data(状态角) not in ("成功", "无数据")),
+        先看 = next((i for i in sorted(self.已显示) if self.列表.item(i).data(状态角) not in ("成功", "无数据", "未运行")),
                   min(self.已显示) if self.已显示 else 0)
         self.列表.setCurrentRow(先看)
         self.详情.setCurrentIndex(先看)

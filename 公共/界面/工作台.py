@@ -50,7 +50,7 @@ def 范围文字(原名, 总开关):
     默认, 可发, _ = 模块信息(原名)
     参数 = 模块参数.读取(原名, 默认)
     if "查询范围" in 参数:
-        范围 = "、".join(查询范围.整理(参数["查询范围"])[0]) or "没选范围"
+        范围 = "、".join(查询范围.整理(参数["查询范围"])[0]) or "没选范围，不会跑"
     elif 原名 == "飞书任务明细":
         范围 = "飞书 · 我负责的"
     else:
@@ -373,7 +373,7 @@ class 工作台(QWidget):
         if self.上次:
             最近 = max(r["时间"] for r in self.上次.values())
             同批 = [r for r in self.上次.values() if abs((r["时间"] - 最近).total_seconds()) < 600]
-            坏 = [r for r in 同批 if r["状态"] not in ("成功", "无数据")]
+            坏 = [r for r in 同批 if r["状态"] not in ("成功", "无数据", "未运行")]
             谁 = "、".join(显示名(名) for 名, r in self.上次.items() if r in 同批)
             self.头.设副标题(f"上次运行 {最近:%m/%d %H:%M}（{谁}），"
                            + ("都正常。" if not 坏 else f"{len(坏)} 个有问题，见下面“需要注意”。"))
@@ -388,7 +388,7 @@ class 工作台(QWidget):
         条们 = []
         for 名, _ in 清单:
             r = self.上次.get(名)
-            if r and r["状态"] not in ("成功", "无数据"):
+            if r and r["状态"] not in ("成功", "无数据", "未运行"):
                 摘要 = r["摘要"].split(" → 建议")[0] if r["摘要"] else ""
                 if 摘要.startswith(r["名字"] + " → "):
                     摘要 = 摘要[len(r["名字"]) + 3:]

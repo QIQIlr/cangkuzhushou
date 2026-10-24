@@ -274,6 +274,10 @@ class 模块设置面板(QWidget):
         self.名字框.setFocus()
         self.名字框.selectAll()
 
+    def 聚焦(self):
+        """在左边双击模块：直接开始改名字。"""
+        self.开始改名()
+
     def 取消改名(self):
         self.改名行.setVisible(False)
         self.改名提示.setVisible(False)
@@ -313,8 +317,14 @@ class 模块设置面板(QWidget):
             self.区格.removeWidget(框)
         for i, 框 in enumerate(f for f in self.区框.values() if not f.isHidden()):
             self.区格.addWidget(框, i // 3, i % 3)
-        self.范围说明.setText(("已经包含在勾选的仓库里，不用单独勾：" + "、".join(收起) + "。") if 收起 else "")
-        self.范围说明.setVisible(bool(收起))
+        空 = not any(f.isChecked() for f in self.仓库框.values()) and not any(
+            f.isChecked() and not f.isHidden() for f in self.区框.values())
+        字 = ("已经包含在勾选的仓库里，不用单独勾：" + "、".join(收起) + "。") if 收起 else ""
+        if 空:
+            字 = "一项都没勾：这个模块即使在左边开着，运行时也不会跑。"
+        self.范围说明.setText(字)
+        self.范围说明.setStyleSheet(f"color:{色['注意']};" if 空 else "")
+        self.范围说明.setVisible(bool(字))
 
     def _改范围(self, _开=None):
         from 公共 import 查询范围
@@ -323,18 +333,10 @@ class 模块设置面板(QWidget):
         选择 = [名 for 名, f in self.仓库框.items() if f.isChecked()] + \
              [名 for 名, f in self.区框.items() if f.isChecked() and not f.isHidden()]
         整理后, _ = 查询范围.整理(选择)
-        if not 整理后:          # 最后一项不能取消
-            if 框 is not None:
-                框.blockSignals(True)
-                框.setChecked(True)
-                框.blockSignals(False)
-                self._排范围()
-            self.保存字.setText("至少要勾一项，最后这一项不能取消。")
-            self.保存字.setStyleSheet(f"color:{色['注意']};")
-            return
-        self.参数["查询范围"] = 整理后
+        self.参数["查询范围"] = 整理后          # 可以一项都不勾：这个模块就不跑（小柒 2026-10-24）
         模块参数.保存(self.模块名, self.参数)
-        self._已保存("查询范围已保存：" + "、".join(整理后))
+        self._排范围()
+        self._已保存("查询范围已保存：" + ("、".join(整理后) if 整理后 else "一项都没勾，这个模块不会跑"))
 
     # ---------- 飞书 ----------
     def _改飞书(self, 开):
