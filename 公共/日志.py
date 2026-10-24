@@ -3,7 +3,7 @@
 #   运行记录.txt   中文逐步记录 + 结尾结论
 #   截图.png / 网页快照.html / 技术详情.txt   只在出错时保存，给 AI 定位问题用
 #   发送内容.txt   飞书消息原文和发送结果
-# 另有 日志\运行总表.csv：每次运行一行（Excel 可直接打开）。
+# 另有 日志\运行总表.csv：每次运行一行（Excel 可直接打开）。最后一列“测试”= Claude 自测的运行（2026-10-24 起才有这一列）。
 # 安全：写入前会把 Webhook 地址、cookie、token 之类的内容遮掉。日志保留 90 天。
 import csv
 import platform
@@ -36,8 +36,9 @@ def 遮掩(文字):
 
 
 class 运行记录:
-    def __init__(self, 模块名, 运行方式=""):
+    def __init__(self, 模块名, 运行方式="", 测试=False):
         from 公共.模块参数 import 显示名
+        self.测试 = 测试                           # Claude 自测时为 True：运行总表里这一行标“测试”，工作台不算它
         self.模块名 = 模块名                       # 原名（固定）
         self.显示名 = 显示名(模块名)               # 窗口里改过的名字；没改过就是原名
         self.开始 = time.time()
@@ -143,10 +144,11 @@ class 运行记录:
         with open(总表, "a", encoding="utf-8-sig", newline="") as f:
             w = csv.writer(f)
             if 新文件:
-                w.writerow(["时间", "模块", "状态", "数量", "用时(秒)", "错误摘要", "日志文件夹"])
+                w.writerow(["时间", "模块", "状态", "数量", "用时(秒)", "错误摘要", "日志文件夹", "测试"])
             名 = self.显示名 + (f"（{self.模块名}）" if self.显示名 != self.模块名 else "")
             w.writerow([f"{datetime.now():%Y-%m-%d %H:%M:%S}", 名, 状态,
-                        "" if 数量 is None else 数量, f"{用时:.0f}", 遮掩(错误摘要), self.文件夹名])
+                        "" if 数量 is None else 数量, f"{用时:.0f}", 遮掩(错误摘要), self.文件夹名,
+                        "测试" if self.测试 else ""])
         return 用时
 
 

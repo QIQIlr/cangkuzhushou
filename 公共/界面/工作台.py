@@ -264,7 +264,7 @@ class 工作台(QWidget):
             项.setData(说明角, 模块说明(名))
             项.setData(范围角, 范围文字(名))
             项.setData(上次角, self.上次.get(名))
-            项.setToolTip(模块说明(名) + (f"`n原名：{名}" if 显示名(名) != 名 else ""))
+            项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
             项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
             项.setFlags(项.flags() & ~Qt.ItemIsDropEnabled)
             项.setCheckState(Qt.Checked if 开 else Qt.Unchecked)
@@ -272,6 +272,7 @@ class 工作台(QWidget):
             if 名 == 当前:
                 self.列表.setCurrentItem(项)
         self.列表.blockSignals(False)
+        提醒 = "\n".join(x for x in (模块参数.问题, 提醒) if x)   # 模块参数.json 读不出来时也在这里说
         self.提醒.setText(提醒)
         self.提醒.setVisible(bool(提醒))
         self._更新数字()
@@ -335,7 +336,9 @@ class 工作台(QWidget):
             最近 = max(r["时间"] for r in self.上次.values())
             同批 = [r for r in self.上次.values() if abs((r["时间"] - 最近).total_seconds()) < 600]
             坏 = [r for r in 同批 if r["状态"] not in ("成功", "无数据")]
-            self.头.设副标题(f"上次运行 {最近:%m/%d %H:%M}，" + ("全部正常。" if not 坏 else f"{len(坏)} 个模块有问题，见下面“需要注意”。"))
+            谁 = "、".join(显示名(名) for 名, r in self.上次.items() if r in 同批)
+            self.头.设副标题(f"上次运行 {最近:%m/%d %H:%M}（{谁}），"
+                           + ("都正常。" if not 坏 else f"{len(坏)} 个有问题，见下面“需要注意”。"))
         else:
             self.头.设副标题("还没有运行记录。打开要跑的模块，点右上角“运行已启用模块”。")
 

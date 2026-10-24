@@ -6,12 +6,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-from 公共 import 模块设置
+from 公共 import 模块参数, 模块设置
 from 公共.界面 import 运行历史
 from 公共.界面.主题 import 字, 状态样子, 颜色, 色
 from 公共.界面.组件 import 分段, 卡片, 按钮, 标签, 页眉
 from 公共.日志 import 日志根
-from 公共.模块参数 import 显示名
 
 
 class 记录页(QWidget):
@@ -46,8 +45,7 @@ class 记录页(QWidget):
         self.表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.表.setStyleSheet(f"QTableWidget {{ border: none; }} QTableWidget::item {{ border-bottom: 1px solid {色['线']}; padding: 0 8px; }}")
         头 = self.表.horizontalHeader()
-        for c, 方式 in enumerate([QHeaderView.ResizeToContents] * 5 + [QHeaderView.Stretch]):
-            头.setSectionResizeMode(c, 方式)
+        头.setSectionResizeMode(5, QHeaderView.Stretch)     # 前 5 列的宽度在填完表后一次调好（见 _填）
         头.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.表.verticalHeader().setDefaultSectionSize(40)
         self.表.cellDoubleClicked.connect(self._打开)
@@ -60,7 +58,7 @@ class 记录页(QWidget):
         self.行们 = []
 
     def 刷新(self):
-        原名们 = [名 for 名, _ in 模块设置.读取()[0]]
+        原名们 = [名 for 名, _ in 模块设置.读取(写回=False)[0]]   # 只是看一眼，不写设置文件
         self.行们 = 运行历史.读全部(原名们)
         有的 = [名 for 名 in 原名们 if any(r["原名"] == 名 for r in self.行们)]
         if self.筛选 is not None:
@@ -68,7 +66,7 @@ class 记录页(QWidget):
             self.筛选.deleteLater()
         self.选项 = [None] + 有的
         当前 = self.选项.index(self.当前筛选) if self.当前筛选 in self.选项 else 0
-        self.筛选 = 分段(["全部"] + [显示名(名) for 名 in 有的], 当前)
+        self.筛选 = 分段(["全部"] + [模块参数.显示名(名) for 名 in 有的], 当前)
         self.筛选.选了.connect(self._选筛选)
         self.筛选行.insertWidget(0, self.筛选)
         self._填()
@@ -80,9 +78,18 @@ class 记录页(QWidget):
     def _填(self):
         行们 = [r for r in self.行们 if self.当前筛选 is None or r["原名"] == self.当前筛选]
         self.显示中 = 行们
+        改名 = 模块参数.显示名表()               # 一次读好，不要每行读一次设置文件
+        # 卡顿的原因（2026-10-24 实测）：表格里已有上次的行时逐格替换，每换一格 Qt 都把“随内容调宽”的整列重量一遍，
+        # 124 行要 3 秒、500 行要 50 秒。所以先清空旧行、填的时候不调列宽，填完再一次调好。
+        头 = self.表.horizontalHeader()
+        self.表.setUpdatesEnabled(False)
+        self.表.setRowCount(0)
+        for c in range(5):
+            头.setSectionResizeMode(c, QHeaderView.Interactive)
         self.表.setRowCount(len(行们))
         for i, r in enumerate(行们):
-            文们 = [f"{r['时间']:%m/%d %H:%M}", 显示名(r["原名"]) if r["原名"] in self.选项 else r["名字"],
+            名 = 改名.get(r["原名"], r["原名"]) if r["原名"] in self.选项 else r["名字"]
+            文们 = [f"{r['时间']:%m/%d %H:%M}", 名 + ("（测试）" if r["测试"] else ""),
                   r["状态"], r["数量"], f"{r['用时']} 秒" if r["用时"] else "", r["摘要"]]
             for c, 文 in enumerate(文们):
                 格 = QTableWidgetItem(str(文))
@@ -97,7 +104,13 @@ class 记录页(QWidget):
                     格.setToolTip(文)
                 elif c == 0:
                     格.setForeground(颜色(色["弱字"]))
+                if r["测试"]:                    # Claude 自测的运行：整行灰色，工作台不算它
+                    格.setForeground(颜色(色["灰"]))
+                    if c == 1:
+                        格.setToolTip("这是 Claude 测试时跑的，不是你跑的。工作台的“上次结果”不算它。")
                 self.表.setItem(i, c, 格)
+        self.表.resizeColumnsToContents()
+        self.表.setUpdatesEnabled(True)
         self.空字.setVisible(not 行们)
 
     def _打开(self, 行, _列):

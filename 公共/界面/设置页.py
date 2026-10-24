@@ -1,7 +1,7 @@
 # 职责：设置页。把改版前窗口最下面那排按钮按用途分组放在这里，每个按钮做的事和以前一样。
 #   飞书群机器人 ｜ 登录（WMS、飞书）｜ 邮编数据 ｜ 运行选项 ｜ 文件和模块
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from 公共 import 飞书
 from 公共.界面.主题 import 色
@@ -23,6 +23,7 @@ def _一行(图, 标题, 说明, 右边们):
     t.setStyleSheet("font-weight:bold; font-size:10.5pt;")
     字层.addWidget(t)
     s = 标签(说明, "说明", 换行=True)
+    s.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)   # 不然换行的说明会被压成一行、和标题重叠
     字层.addWidget(s)
     层.addLayout(字层, 1)
     for x in 右边们:
