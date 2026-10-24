@@ -166,9 +166,9 @@ def 飞书说明(状态, 说明, 手动=False):
         return "已发到飞书 ✔" + ("（刚才手动发的）" if 手动 else ""), False
     if 状态 == "未发送":
         if "本次选择不发送" in 说明:
-            return "没发飞书（运行前没勾“运行完自动发到飞书”）", False
+            return "没自动发飞书（工作台右上角的“跑完自动发飞书”关着）。想发就点右边的“发到飞书”。", False
         if "设置为不发" in 说明:
-            return "没发飞书（这个模块设置成不发）", False
+            return "没自动发飞书（这个模块设成跑完不自动发）。想发就点右边的“发到飞书”。", False
         if "还没设置好飞书" in 说明:
             return "没发飞书：还没设置飞书（到“设置”页点“设置飞书”）", False
         return f"没发飞书（{说明}）", False
@@ -186,6 +186,7 @@ def _底部(项, 发送):
         字 = _标签(文字, f"color:{色['坏'] if 坏 else 色['说明']};")
         行.addWidget(字, 1)
         钮 = QPushButton("再发一次到飞书" if 项["飞书"][0] == "成功" else "发到飞书")
+        钮.setToolTip("手动把这个结果发到飞书群一次，不看“跑完自动发飞书”的开关。")
         钮.clicked.connect(lambda _=False: 发送(项, 字, 钮))
         行.addWidget(钮)
     if 项.get("附件"):

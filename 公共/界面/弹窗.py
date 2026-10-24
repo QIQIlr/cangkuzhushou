@@ -1,11 +1,11 @@
 # 职责：弹出的小窗口和模块设置面板。内容、按钮、保存规则和改版前一样，只换了样子。
 #   任务选择窗口：转寄退货任务运行中，按飞书顺序列出全部标题，点一行勾选（不分组、不排序、默认不勾，小柒 2026-10-24 确认）
 #   飞书设置窗口：粘贴 Webhook，测试成功才保存
-#   模块设置面板：工作台右边那块（名字、查询范围/区域、发到飞书）
+#   模块设置面板：工作台右边那块（就地改名、查询范围、跑完自动发飞书；改动即保存，小柒 2026-10-24）
 import importlib
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QGridLayout, QHBoxLayout, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QMessageBox, QScrollArea, QVBoxLayout, QWidget)
 
 from 公共 import 模块参数, 模块设置, 飞书
@@ -129,20 +129,26 @@ def 模块信息(模块名):
 
 
 class 模块设置面板(QWidget):
-    """工作台右边：选中模块的设置。保存规则和改版前的“模块设置”窗口一样。保存后发 已保存(原名)。"""
+    """工作台右边：选中模块的设置（小柒 2026-10-24）。
+    - 名字：点名字或铅笔就地修改，✓ / 回车 保存，✗ / Esc 取消；原名固定不变。
+    - 查询范围：仓库 + 单独的区，规则见 公共\查询范围.py（勾了仓库，它包含的区收起）。
+    - 跑完自动发到飞书群（这个模块）。
+    范围和飞书开关一改就保存，没有“保存”按钮。保存后发 已保存(原名)。"""
     已保存 = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.模块名 = None
+        self.总开关开 = False          # 工作台右上角“跑完自动发飞书”，只用来写说明
         外 = QVBoxLayout(self)
         外.setContentsMargins(0, 0, 0, 0)
         self.卡 = 卡片(18, 12)
         外.addWidget(self.卡)
-        self.空 = 空白提示("设置", "模块设置", "在左边点一个模块，这里就能改它的名字、查询范围和发不发飞书。双击模块也能打开。")
+        self.空 = 空白提示("设置", "模块设置", "在左边点一个模块，这里就能改它的名字、查询范围和跑完要不要自动发飞书。")
         self.卡.层.addWidget(self.空)
         self.表 = None
 
+    # ---------- 搭界面 ----------
     def 显示(self, 模块名, 说明=""):
         """换成某个模块的设置（模块名 = 原名；None = 空白提示）。"""
         if self.表 is not None:
@@ -153,16 +159,53 @@ class 模块设置面板(QWidget):
         self.空.setVisible(模块名 is None)
         if 模块名 is None:
             return
-        默认, 可发, 模块说明 = 模块信息(模块名)
+        from 公共 import 查询范围
+        默认, self.可发, 模块说明 = 模块信息(模块名)
         self.参数 = 模块参数.读取(模块名, 默认)
         self.表 = QWidget()
         层 = QVBoxLayout(self.表)
         层.setContentsMargins(0, 0, 0, 0)
-        层.setSpacing(10)
+        层.setSpacing(8)
         层.addWidget(标签("模块设置", "眉"))
-        名 = 标签(模块参数.显示名(模块名), "小标题")
-        名.setStyleSheet("font-size:14pt; font-weight:bold;")
-        层.addWidget(名)
+        # 名字：平时是文字 + 铅笔，点了变成输入框
+        self.名字行 = QWidget()
+        名层 = QHBoxLayout(self.名字行)
+        名层.setContentsMargins(0, 0, 0, 0)
+        名层.setSpacing(4)
+        self.名字字 = 可点标签(模块参数.显示名(模块名))
+        self.名字字.setStyleSheet("font-size:14pt; font-weight:bold;")
+        self.名字字.setToolTip("点一下改名字")
+        self.名字字.点了.connect(self.开始改名)
+        名层.addWidget(self.名字字, 0)
+        铅笔 = 按钮("", "图标", 图="编辑", 提示="改名字")
+        铅笔.clicked.connect(self.开始改名)
+        名层.addWidget(铅笔)
+        名层.addStretch(1)
+        层.addWidget(self.名字行)
+        self.改名行 = QWidget()
+        改层 = QHBoxLayout(self.改名行)
+        改层.setContentsMargins(0, 0, 0, 0)
+        改层.setSpacing(4)
+        self.名字框 = 名字输入框()
+        self.名字框.setMaxLength(模块参数.最长)
+        self.名字框.回车.connect(self.保存名字)
+        self.名字框.取消.connect(self.取消改名)
+        改层.addWidget(self.名字框, 1)
+        好 = 按钮("", "图标", 图="勾", 图色=色["好"], 提示="保存名字（回车）")
+        好.clicked.connect(self.保存名字)
+        不 = 按钮("", "图标", 图="错", 提示="不改了（Esc）")
+        不.clicked.connect(self.取消改名)
+        改层.addWidget(好)
+        改层.addWidget(不)
+        self.改名行.setVisible(False)
+        层.addWidget(self.改名行)
+        self.改名提示 = 标签("", "说明", 换行=True)
+        self.改名提示.setVisible(False)
+        层.addWidget(self.改名提示)
+        原名字 = 标签(f"原名：{模块名}（固定不变；改名只改显示的名字）", "说明", 换行=True)
+        self.原名字 = 原名字
+        原名字.setVisible(模块参数.显示名(模块名) != 模块名)
+        层.addWidget(原名字)
         if 说明 or 模块说明:
             层.addWidget(标签(说明 or 模块说明, "说明", 换行=True))
         层.addWidget(分隔线())
@@ -173,88 +216,177 @@ class 模块设置面板(QWidget):
         内 = QWidget()
         内层 = QVBoxLayout(内)
         内层.setContentsMargins(0, 0, 4, 0)
-        内层.setSpacing(8)
-        内层.addWidget(标签("名字", "组名"))
-        名行 = QHBoxLayout()
-        self.名字框 = QLineEdit(模块参数.显示名(模块名))
-        self.名字框.setMaxLength(模块参数.最长)
-        名行.addWidget(self.名字框, 1)
-        恢复 = 按钮("恢复原名", "淡")
-        恢复.clicked.connect(lambda: self.名字框.setText(模块名))
-        名行.addWidget(恢复)
-        内层.addLayout(名行)
-        内层.addWidget(标签(f"原名：{模块名}（固定不变）。改名后窗口、飞书卡片、Excel、日志都用新名字；勾选、顺序和下面的设置不变。"
-                          f"最多 {模块参数.最长} 个字，不能有 {' '.join(模块参数.不能用的符号)}", "说明", 换行=True))
-        self.区域框, self.范围框 = {}, {}
-        if "查询范围" in self.参数:
-            from 公共.待处理 import 仓库, 范围选项
-            内层.addSpacing(6)
-            内层.addWidget(标签("查询范围（每个勾选项单独一张表、一张飞书卡片）", "组名"))
-            for 范 in 范围选项:
-                文字 = f"{范}（{' + '.join(仓库[范])}）" if 范 in 仓库 else (f"{范}（测试区）" if 范 == "B区" else f"{范}（单独）")
-                框 = QCheckBox(文字)
-                框.setChecked(范 in self.参数["查询范围"])
-                self.范围框[范] = 框
-                内层.addWidget(框)
-            内层.addWidget(标签("一般勾仓库就行；想单独看某个区时再勾那个区。", "说明", 换行=True))
-        if "区域" in self.参数:
-            内层.addSpacing(6)
-            内层.addWidget(标签("查询区域（表格和结果按这里的顺序）", "组名"))
-            格 = QGridLayout()
-            格.setHorizontalSpacing(16)
-            for i, 区 in enumerate(模块参数.区域选项()):
-                框 = QCheckBox(区)
-                框.setChecked(区 in self.参数["区域"])
-                self.区域框[区] = 框
-                格.addWidget(框, i // 3, i % 3)
-            内层.addLayout(格)
-            内层.addWidget(标签("区域选项来自 WMS 的“所属区域”下拉（运行待审核、待拣货、待增值时会自动更新）。", "说明", 换行=True))
-        内层.addSpacing(6)
+        内层.setSpacing(6)
+        # 飞书放在前面：一眼就能看到
         内层.addWidget(标签("飞书", "组名"))
-        self.发送框 = 开关("结果发到飞书")
-        self.发送框.setChecked(self.参数.get("发到飞书", True) and 可发)
-        if 可发:
+        self.发送框 = 开关("跑完自动发到飞书群")
+        if self.可发:
+            self.发送框.setChecked(bool(self.参数.get("发到飞书", True)))
+            self.发送框.toggled.connect(self._改飞书)
             内层.addWidget(self.发送框)
-        else:
-            内层.addWidget(标签("这个模块的结果只在仓库助手窗口里看，不发飞书。", "说明", 换行=True))
+        self.飞书说明 = 标签("", "说明", 换行=True)
+        内层.addWidget(self.飞书说明)
+        # 查询范围
+        self.仓库框, self.区框 = {}, {}
+        if "查询范围" in self.参数:
+            已选, _ = 查询范围.整理(self.参数.get("查询范围"))
+            内层.addSpacing(8)
+            内层.addWidget(标签("查询范围（每勾一项，单独出一张表）", "组名"))
+            内层.addWidget(标签("仓库", "说明"))
+            for 仓 in 查询范围.仓库:
+                框 = QCheckBox(查询范围.说明(仓))
+                框.setChecked(仓 in 已选)
+                框.toggled.connect(self._改范围)
+                self.仓库框[仓] = 框
+                内层.addWidget(框)
+            内层.addSpacing(4)
+            内层.addWidget(标签("单独的区", "说明"))
+            self.区格 = QGridLayout()
+            self.区格.setHorizontalSpacing(16)
+            for 区 in 查询范围.区域们():
+                框 = QCheckBox(查询范围.说明(区))
+                框.setChecked(区 in 已选)
+                框.toggled.connect(self._改范围)
+                self.区框[区] = 框
+            内层.addLayout(self.区格)
+            self.范围说明 = 标签("", "说明", 换行=True)
+            内层.addWidget(self.范围说明)
+            self._排范围()
         内层.addStretch(1)
         滚.setWidget(内)
         层.addWidget(滚, 1)
         层.addWidget(分隔线())
-        行 = QHBoxLayout()
-        行.addStretch(1)
-        放弃 = 按钮("放弃修改")
-        放弃.clicked.connect(lambda: self.显示(模块名, 说明))
-        保存 = 按钮("保存", "主")
-        保存.clicked.connect(self.保存)
-        行.addWidget(放弃)
-        行.addWidget(保存)
-        层.addLayout(行)
+        self.保存字 = 标签("改动会自动保存。", "说明")
+        层.addWidget(self.保存字)
         self.卡.层.addWidget(self.表, 1)
+        self.更新飞书说明()
 
-    def 聚焦(self):
-        if self.表 is not None:
-            self.名字框.setFocus()
+    # ---------- 名字 ----------
+    def 开始改名(self):
+        if self.表 is None:
+            return
+        self.名字框.setText(模块参数.显示名(self.模块名))
+        self.名字行.setVisible(False)
+        self.改名行.setVisible(True)
+        self.改名提示.setText(f"回车保存，Esc 不改。最多 {模块参数.最长} 个字；想改回原来的名字，就填“{self.模块名}”。")
+        self.改名提示.setStyleSheet("")
+        self.改名提示.setVisible(True)
+        self.名字框.setFocus()
+        self.名字框.selectAll()
 
-    def 保存(self):
+    def 取消改名(self):
+        self.改名行.setVisible(False)
+        self.改名提示.setVisible(False)
+        self.名字行.setVisible(True)
+
+    def 保存名字(self):
         新名 = self.名字框.text().strip()
+        if 新名 == 模块参数.显示名(self.模块名):
+            self.取消改名()
+            return
         问题 = 模块参数.检查名字(self.模块名, 新名, 模块设置.所有模块())
         if 问题:
-            QMessageBox.warning(self, "名字不能用", 问题)
+            self.改名提示.setText("没保存：" + 问题)
+            self.改名提示.setStyleSheet(f"color:{色['坏']};")
+            self.名字框.setFocus()
             return
-        if self.范围框:
-            选中 = [名 for 名, 框 in self.范围框.items() if 框.isChecked()]
-            if not 选中:
-                QMessageBox.warning(self, "至少选一个", "请至少勾选一个仓库或区域。")
-                return
-            self.参数["查询范围"] = 选中
-        if self.区域框:
-            选中 = [区 for 区, 框 in self.区域框.items() if 框.isChecked()]
-            if not 选中:
-                QMessageBox.warning(self, "至少选一个区域", "请至少勾选一个区域。")
-                return
-            self.参数["区域"] = 选中
-        self.参数["发到飞书"] = self.发送框.isChecked()          # 和改版前一样：不能发的模块存“否”
-        模块参数.保存(self.模块名, self.参数)
         模块参数.保存显示名(self.模块名, 新名)
+        self.名字字.setText(模块参数.显示名(self.模块名))
+        self.原名字.setVisible(模块参数.显示名(self.模块名) != self.模块名)
+        self.取消改名()
+        self._已保存(f"名字已改成“{模块参数.显示名(self.模块名)}”")
+
+    # ---------- 范围 ----------
+    def _排范围(self):
+        """勾了仓库：它包含的区取消勾选并收起；没勾仓库的区照常显示。"""
+        from 公共 import 查询范围
+        收起 = []
+        for 区, 框 in self.区框.items():
+            仓 = 查询范围.包含它的仓库(区, [名 for 名, f in self.仓库框.items() if f.isChecked()])
+            if 仓:
+                框.blockSignals(True)
+                框.setChecked(False)
+                框.blockSignals(False)
+                收起.append(f"{区}")
+            框.setVisible(not 仓)
+        for 框 in self.区框.values():          # 显示的区按顺序排，收起的不占位置
+            self.区格.removeWidget(框)
+        for i, 框 in enumerate(f for f in self.区框.values() if not f.isHidden()):
+            self.区格.addWidget(框, i // 3, i % 3)
+        self.范围说明.setText(("已经包含在勾选的仓库里，不用单独勾：" + "、".join(收起) + "。") if 收起 else "")
+        self.范围说明.setVisible(bool(收起))
+
+    def _改范围(self, _开=None):
+        from 公共 import 查询范围
+        框 = self.sender()
+        self._排范围()
+        选择 = [名 for 名, f in self.仓库框.items() if f.isChecked()] + \
+             [名 for 名, f in self.区框.items() if f.isChecked() and not f.isHidden()]
+        整理后, _ = 查询范围.整理(选择)
+        if not 整理后:          # 最后一项不能取消
+            if 框 is not None:
+                框.blockSignals(True)
+                框.setChecked(True)
+                框.blockSignals(False)
+                self._排范围()
+            self.保存字.setText("至少要勾一项，最后这一项不能取消。")
+            self.保存字.setStyleSheet(f"color:{色['注意']};")
+            return
+        self.参数["查询范围"] = 整理后
+        模块参数.保存(self.模块名, self.参数)
+        self._已保存("查询范围已保存：" + "、".join(整理后))
+
+    # ---------- 飞书 ----------
+    def _改飞书(self, 开):
+        self.参数["发到飞书"] = bool(开)
+        模块参数.保存(self.模块名, self.参数)
+        self.更新飞书说明()
+        self._已保存("已保存：" + ("跑完自动发到飞书群" if 开 else "跑完不自动发"))
+
+    def 设总开关(self, 开):
+        self.总开关开 = bool(开)
+        self.更新飞书说明()
+
+    def 更新飞书说明(self):
+        if self.表 is None:
+            return
+        if not self.可发:
+            字 = "这个模块的结果只在仓库助手里看，不能发到飞书。"
+        elif not self.总开关开:
+            字 = ("现在不会自动发：工作台右上角的“跑完自动发飞书”关着。"
+                  if self.发送框.isChecked() else "跑完不会自动发。") + "想发的时候，在结果下面点“发到飞书”。"
+        else:
+            字 = "跑完会自动发到飞书群。" if self.发送框.isChecked() else "跑完不会自动发。想发的时候，在结果下面点“发到飞书”。"
+        self.飞书说明.setText(字)
+
+    def _已保存(self, 文字):
+        from datetime import datetime
+        self.保存字.setText(f"✔ {文字}（{datetime.now():%H:%M:%S}）")
+        self.保存字.setStyleSheet(f"color:{色['好']};")
         self.已保存.emit(self.模块名)
+
+
+class 可点标签(QLabel):
+    点了 = Signal()
+
+    def __init__(self, 文字=""):
+        super().__init__(文字)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mouseReleaseEvent(self, 事件):
+        if 事件.button() == Qt.LeftButton:
+            self.点了.emit()
+        super().mouseReleaseEvent(事件)
+
+
+class 名字输入框(QLineEdit):
+    回车 = Signal()
+    取消 = Signal()
+
+    def keyPressEvent(self, 事件):
+        if 事件.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.回车.emit()
+        elif 事件.key() == Qt.Key_Escape:
+            self.取消.emit()
+        else:
+            super().keyPressEvent(事件)

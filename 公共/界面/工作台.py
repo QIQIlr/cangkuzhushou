@@ -1,8 +1,9 @@
 # 职责：工作台（打开软件看到的第一页）。
-#   页眉：问候 + 日期 + 上次运行情况；右上：运行已启用模块（主按钮）、只运行选中的、运行完自动发飞书（开关）
+#   页眉：问候 + 日期 + 上次运行情况；右上：跑完自动发飞书（总开关，只在这里有）、只运行选中的、运行已启用模块（主按钮）
 #   需要注意：上次运行有问题的模块、模块设置文件的提醒（都没有就不显示）
 #   模块卡片：排列 = 运行顺序（拖动或上移/下移），开关 = 启用，改动立即保存到 模块设置.txt（和改版前一样）
-#   右侧：选中模块的设置面板（双击模块也会打开）
+#   右侧：选中模块的设置面板（就地改名、查询范围、这个模块跑完自动发；改动即保存）
+#   飞书怎么发（小柒 2026-10-24 确认）：总开关 + 每个模块自己的开关，两个都开才自动发；卡片上写的是最终会不会发。
 # 参考：Taskless（右侧编辑面板、一个主按钮）、Norix（问候、需要注意清单）、Watchlist（卡片上一个大数字 + 一行小字）。
 from datetime import datetime
 
@@ -11,7 +12,7 @@ from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QListWidget, QListWidgetItem, QStyle,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
-from 公共 import 模块参数, 模块设置
+from 公共 import 模块参数, 模块设置, 查询范围
 from 公共.界面 import 运行历史
 from 公共.界面.主题 import 字, 画图标, 状态样子, 色
 from 公共.界面.弹窗 import 模块信息, 模块设置面板
@@ -41,18 +42,25 @@ def 模块说明(原名):
     return 自己的 or 说明表.get(原名, "")
 
 
-def 范围文字(原名):
+自动发字 = "跑完自动发飞书"
+
+
+def 范围文字(原名, 总开关):
+    """卡片上的两个小标签：查询范围、飞书最终会不会自动发（总开关和模块开关都开才发）。"""
     默认, 可发, _ = 模块信息(原名)
     参数 = 模块参数.读取(原名, 默认)
-    if 参数.get("查询范围"):
-        范围 = "、".join(参数["查询范围"])
-    elif 参数.get("区域"):
-        范围 = "、".join(参数["区域"])
+    if "查询范围" in 参数:
+        范围 = "、".join(查询范围.整理(参数["查询范围"])[0]) or "没选范围"
     elif 原名 == "飞书任务明细":
         范围 = "飞书 · 我负责的"
     else:
         范围 = ""
-    飞 = "发飞书" if (可发 and 参数.get("发到飞书", True)) else "只在窗口看"
+    if not 可发:
+        飞 = "只在窗口看"
+    elif 参数.get("发到飞书", True) and 总开关:
+        飞 = 自动发字
+    else:
+        飞 = "不自动发"
     return 范围, 飞
 
 
@@ -125,8 +133,8 @@ class 模块卡片画法(QStyledItemDelegate):
         范围, 飞 = 索引.data(范围角) or ("", "")
         p.setFont(字(8.5))
         x = 文区.left()
-        for 文, 底, 前 in ((范围, 色["底"], 色["次字"]), (飞, 色["主浅"] if 飞 == "发飞书" else 色["底"],
-                                                       色["主"] if 飞 == "发飞书" else 色["弱字"])):
+        for 文, 底, 前 in ((范围, 色["底"], 色["次字"]), (飞, 色["主浅"] if 飞 == 自动发字 else 色["底"],
+                                                       色["主"] if 飞 == 自动发字 else 色["弱字"])):
             if not 文:
                 continue
             宽 = QFontMetrics(p.font()).horizontalAdvance(文) + 14
@@ -175,6 +183,12 @@ class 工作台(QWidget):
         self.运行全部按钮 = 按钮("运行已启用模块", "主", 图="运行")
         self.运行全部按钮.setMinimumHeight(38)
         self.运行选中按钮.setMinimumHeight(38)
+        self.自动发 = 开关("跑完自动发飞书")
+        self.自动发.setChecked(bool(自动发设置值))
+        self.自动发.setToolTip("总开关。打开：跑完后，卡片上标着“跑完自动发飞书”的模块会自动发到飞书群。\n"
+                            "关上：哪个模块都不自动发；想发的时候，在结果下面点“发到飞书”。")
+        self.头.右.addWidget(self.自动发)
+        self.头.右.addSpacing(8)
         self.头.右.addWidget(self.运行选中按钮)
         self.头.右.addWidget(self.运行全部按钮)
         总.addWidget(self.头)
@@ -232,18 +246,15 @@ class 工作台(QWidget):
         模块卡.层.addWidget(self.列表, 1)
         模块卡.层.addWidget(标签("拖动卡片调整运行顺序（上面的先跑）· 点开关启用或停用 · 按住 Ctrl 可以选多个", "说明", 换行=True))
         左.addWidget(模块卡, 1)
-        底行 = QHBoxLayout()
-        self.自动发 = 开关("运行完自动发到飞书（按各模块的设置）")
-        self.自动发.setChecked(bool(自动发设置值))
-        底行.addWidget(self.自动发)
-        底行.addStretch(1)
-        左.addLayout(底行)
+        self.飞书总述 = 标签("", "说明", 换行=True)      # 一句话：这次跑完哪些模块会自动发
+        左.addWidget(self.飞书总述)
         中.addLayout(左, 1)
 
         self.面板 = 模块设置面板()
         self.面板.setFixedWidth(350)
         self.面板.已保存.connect(self._设置保存了)
         中.addWidget(self.面板)
+        self.自动发.toggled.connect(self._总开关变了)
         总.addLayout(中, 1)
 
         self.运行全部按钮.clicked.connect(lambda: self.运行请求.emit([名 for 名, 开 in self.当前清单() if 开]))
@@ -262,7 +273,7 @@ class 工作台(QWidget):
             项 = QListWidgetItem(显示名(名))
             项.setData(Qt.UserRole, 名)          # 原名：程序靠它认模块，显示的字可以改
             项.setData(说明角, 模块说明(名))
-            项.setData(范围角, 范围文字(名))
+            项.setData(范围角, 范围文字(名, self.自动发.isChecked()))
             项.setData(上次角, self.上次.get(名))
             项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
             项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
@@ -276,6 +287,8 @@ class 工作台(QWidget):
         self.提醒.setText(提醒)
         self.提醒.setVisible(bool(提醒))
         self._更新数字()
+        self.面板.设总开关(self.自动发.isChecked())
+        self._更新飞书总述()
         self._更新注意(清单)
         self._更新页眉()
         self._选中变了(self.列表.currentItem())
@@ -308,7 +321,7 @@ class 工作台(QWidget):
         self.运行请求.emit(self.选中的())
 
     def 设可用(self, 可用):
-        for w in (self.运行全部按钮, self.运行选中按钮, self.列表, self.面板, self.上移钮, self.下移钮):
+        for w in (self.运行全部按钮, self.运行选中按钮, self.列表, self.面板, self.上移钮, self.下移钮, self.自动发):
             w.setEnabled(可用)
 
     def _选中变了(self, 项, _旧=None):
@@ -318,7 +331,32 @@ class 工作台(QWidget):
             self.面板.显示(项.data(Qt.UserRole), 项.data(说明角))
 
     def _设置保存了(self, 名):
-        self.刷新模块()          # 名字、范围可能改了；选中的还是这个模块
+        """右侧面板改了名字、范围或飞书开关：只更新这张卡片，不重搭面板（不然正在改的东西会跳）。"""
+        for i in range(self.列表.count()):
+            项 = self.列表.item(i)
+            if 项.data(Qt.UserRole) == 名:
+                项.setText(显示名(名))
+                项.setData(范围角, 范围文字(名, self.自动发.isChecked()))
+                项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
+        self._更新飞书总述()
+
+    def _总开关变了(self, 开):
+        for i in range(self.列表.count()):
+            项 = self.列表.item(i)
+            项.setData(范围角, 范围文字(项.data(Qt.UserRole), 开))
+        self.面板.设总开关(开)
+        self._更新飞书总述()
+
+    def _更新飞书总述(self):
+        会发 = [self.列表.item(i).text() for i in range(self.列表.count())
+              if (self.列表.item(i).data(范围角) or ("", ""))[1] == 自动发字]
+        if not self.自动发.isChecked():
+            字 = "右上角“跑完自动发飞书”关着：跑完哪个模块都不会自动发。想发的时候，在结果下面点“发到飞书”。"
+        elif 会发:
+            字 = "跑完会自动发到飞书群的：" + "、".join(会发) + "。其他模块不自动发。"
+        else:
+            字 = "总开关开着，但没有哪个模块设成“跑完自动发到飞书群”（在右边的模块设置里打开）。"
+        self.飞书总述.setText(字)
 
     # ---------- 页眉、数字、需要注意 ----------
     def _更新数字(self):
