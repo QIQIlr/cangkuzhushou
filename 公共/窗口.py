@@ -2,6 +2,7 @@
 # 2026-10-24 整体重新设计（小柒要求）：左侧导航 + 四个页面，样子统一见 公共\界面\主题.py。
 #   工作台：模块卡片（开关 = 启用，拖动 = 顺序，改动立即保存到 模块设置.txt）、运行按钮、需要注意、右侧模块设置
 #   运行结果：进度、这次运行的模块列表、每个模块的结果页（公共\结果页.py）、运行过程
+#     每个模块查完马上显示（不等后面的）；打开时显示上一次的结果（公共\上次结果.py，小柒 2026-10-24）
 #   运行记录：日志\运行总表.csv
 #   设置：飞书（机器人；自动发的说明——总开关只在工作台右上角）、登录 WMS / 飞书、邮编数据、日志文件夹、刷新模块列表
 # 这个文件只管：程序入口、窗口外壳和导航、后台运行、掉线登录和运行中选任务的等待、关闭。
@@ -44,6 +45,7 @@ class 传话(QObject):
     步骤 = Signal(str, str)
     开始模块 = Signal(int, int, str)
     模块完成 = Signal(str, object)
+    模块结果 = Signal(object)
     全部完成 = Signal(object)
     出错 = Signal(str)
     需要登录 = Signal(int)
@@ -68,6 +70,7 @@ class 主窗口(QMainWindow):
         self.传话.步骤.connect(self._显示步骤)
         self.传话.开始模块.connect(self._开始模块)
         self.传话.模块完成.connect(self._模块完成)
+        self.传话.模块结果.connect(self._模块结果)
         self.传话.全部完成.connect(self._全部完成)
         self.传话.出错.connect(self._运行出错)
         self.传话.需要登录.connect(self._请登录)
@@ -146,6 +149,14 @@ class 主窗口(QMainWindow):
         self.setCentralWidget(中心)
         self.自动发 = self.工作台.自动发
         self.statusBar().showMessage("测试模式：不发飞书" if 测试不发送 else "")
+        self._本次 = None
+        try:   # 打开时：运行结果页先显示上一次的结果（标明时间）
+            from 公共 import 上次结果
+            数据 = 上次结果.读取()
+            if 数据:
+                self.运行页.显示上次(数据)
+        except Exception:
+            _记下窗口错误("显示上一次的结果时出错：\n" + traceback.format_exc())
         self.去(0)
 
     def 去(self, 序号):
@@ -182,6 +193,7 @@ class 主窗口(QMainWindow):
             QMessageBox.warning(self, "请先关闭专用 Chrome", "“自动化专用 Chrome”窗口还开着（登录 WMS 时打开的那个）。\n请先关掉它，再点运行。")
             return
         self.运行中 = True
+        self._本次 = {"开始": datetime.now(), "模块们": list(名列表), "结果们": []}
         self.工作台.设可用(False)
         self.运行页.开始(名列表, f"{datetime.now():%H:%M:%S} 开始：{' → '.join(map(显示名, 名列表))}")
         self._运行标(f"正在运行 0/{len(名列表)}")
@@ -205,6 +217,8 @@ class 主窗口(QMainWindow):
             self.传话.开始模块.emit(*内容)
         elif 事件 == "模块完成":
             self.传话.模块完成.emit(*内容)
+        elif 事件 == "模块结果":
+            self.传话.模块结果.emit(内容)
 
     def _显示步骤(self, 模块名, 文字):
         if 文字.startswith("-" * 10):
@@ -223,6 +237,22 @@ class 主窗口(QMainWindow):
         self.运行页.加一行(f"{'✔' if 好 else '⚠'} {显示名(名)}：{结果['状态']}{数量}")
         self.运行页.模块完成(名, 结果)
 
+    def _模块结果(self, 项):
+        """一个模块整理好、按设置发完飞书：马上显示，并存进“上一次的结果”。"""
+        self.运行页.显示一个(项)
+        if self._本次 is not None:
+            self._本次["结果们"].append(项)
+            self._存上次(完成=False)
+
+    def _存上次(self, 完成):
+        if self._本次 is None:
+            return
+        try:
+            from 公共 import 上次结果
+            上次结果.保存(self._本次["开始"], self._本次["模块们"], self._本次["结果们"], 完成)
+        except Exception:
+            _记下窗口错误("保存“上一次的结果”时出错：\n" + traceback.format_exc())
+
     def _全部完成(self, 总结):
         运行记录.观察者 = None
         self.运行中 = False
@@ -233,6 +263,9 @@ class 主窗口(QMainWindow):
             if 状态 in ("失败", "未知"):
                 坏的.append(f"{项['显示名']}：{状态}，{说明}")
         self.本次日志 = 总结["日志文件夹"]
+        if self._本次 is not None:
+            self._本次["结果们"] = list(总结["消息们"])
+            self._存上次(完成=True)
         有问题 = [r for r in 总结["结果们"] if r["状态"] not in ("成功", "无数据")]
         self.运行页.全部完成(总结["消息们"], self.本次日志, len(有问题))
         self._运行标(f"上次运行：{len(有问题)} 个模块有问题" if 有问题 else "上次运行：全部正常",
@@ -284,6 +317,7 @@ class 主窗口(QMainWindow):
         self.运行中 = False
         self.工作台.设可用(True)
         _记下窗口错误(详情)
+        self._存上次(完成=False)
         self.运行页.出错()
         self._运行标("上次运行出现意外错误", "坏")
         QMessageBox.critical(self, "意外错误", "运行时出现意外错误。\n详情已保存到 日志\\窗口错误.txt，请把这件事告诉 Claude。")

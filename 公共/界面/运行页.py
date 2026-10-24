@@ -3,6 +3,8 @@
 #   左边：这次运行的模块（等待 / 正在运行 / 成功 / 无数据 / 不完整 / 失败 + 主要数字）
 #   右边：选中模块的结果页（公共\结果页.py，内容和改版前一样）
 #   最下面：运行过程（逐行记录，可展开）
+# 2026-10-24（小柒）：每个模块查完马上显示完整结果，不等后面的模块；你点过哪个模块，就不会被自动跳走。
+#   打开仓库助手时，这里显示上一次运行的结果（公共\上次结果.py），并标明是什么时候跑的。
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
@@ -132,6 +134,7 @@ class 运行页(QWidget):
                                 "QListWidget::item, QListWidget::item:selected, QListWidget::item:hover { background: transparent; }")
         self.列表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.列表.currentRowChanged.connect(self._换页)
+        self.列表.itemClicked.connect(lambda _: setattr(self, "用户点过", True))
         中.addWidget(self.列表)
         self.详情卡 = 卡片(0, 0)
         self.详情 = QStackedWidget()
@@ -142,6 +145,9 @@ class 运行页(QWidget):
         总.addWidget(self.页们, 1)
         self.名们 = []
         self.结果们 = {}
+        self.已显示 = set()        # 已经显示完整结果的行号
+        self.用户点过 = False      # 运行中点过左边的模块：之后不再自动跳
+
     def _去工作台钮(self):
         b = 按钮("去工作台", "主", 图="首页")
         b.clicked.connect(self.去工作台)
@@ -158,6 +164,8 @@ class 运行页(QWidget):
         self.页们.setCurrentIndex(1)
         self.名们 = list(名列表)
         self.结果们 = {}
+        self.已显示 = set()
+        self.用户点过 = False
         self.本次日志 = None
         self.日志钮.setVisible(False)
         self.过程.clear()
@@ -196,7 +204,8 @@ class 运行页(QWidget):
         if 0 <= i < self.列表.count():
             self.列表.item(i).setData(状态角, "运行中")
             self._换详情(i, 空白提示("同步", f"正在运行 {显示名(名)}", "当前步骤显示在上面的进度里。"))
-            self.列表.setCurrentRow(i)
+            if not self.用户点过:
+                self.列表.setCurrentRow(i)
 
     def 模块完成(self, 名, 结果):
         self.进度条.setValue(self.进度条.value() + 1)
@@ -206,8 +215,14 @@ class 运行页(QWidget):
                 项.setData(状态角, 结果["状态"])
                 项.setData(数字角, 结果.get("数量") if 结果["状态"] != "失败" else None)
                 self._换详情(i, 空白提示("勾" if 结果["状态"] in ("成功", "无数据") else "警告",
-                                       f"{显示名(名)} 已经查完：{结果['状态']}",
-                                       "全部模块跑完后，这里显示完整结果（发飞书也在最后）。"))
+                                       f"{显示名(名)} 已经查完：{结果['状态']}", "正在整理结果……"))
+                break
+
+    def 显示一个(self, 项):
+        """一个模块整理好了（飞书也按设置发完了）：马上显示它的完整结果。"""
+        for i in range(self.列表.count()):
+            if i not in self.已显示 and self.列表.item(i).data(Qt.UserRole) == 项["模块"]:
+                self._显示行(i, 项)
                 break
 
     def 全部完成(self, 消息们, 日志文件夹, 有问题数):
@@ -226,20 +241,45 @@ class 运行页(QWidget):
         self.显示结果(消息们)
 
     def 显示结果(self, 消息们):
-        """每个模块一页，样子统一，见 公共\结果页.py。"""
-        按名 = {项["模块"]: 项 for 项 in 消息们}
+        """每个模块一页，样子统一，见 公共\结果页.py。已经显示过的不重做（不打断正在看的人）。"""
+        for 项 in 消息们:
+            self.显示一个(项)
+        if not self.用户点过:   # 有问题的先给人看：选中第一个失败/不完整的，没有就选第一个
+            先看 = next((i for i in range(self.列表.count()) if self.列表.item(i).data(状态角) not in ("成功", "无数据")), 0)
+            self.列表.setCurrentRow(先看)
+            self.详情.setCurrentIndex(先看)
+
+    def _显示行(self, i, 项):
+        条 = self.列表.item(i)
+        条.setData(状态角, 项["状态"])
+        条.setData(数字角, 项.get("数量") if 项["状态"] != "失败" else None)
+        条.setData(要看角, 结果页.要看数(项) or (len(结果页.提醒们(项)) if 结果页.提醒们(项) else 0))
+        条.setText(项["显示名"])
+        self._换详情(i, 结果页.一页(项, self.状态栏, self.手动发送))
+        self.已显示.add(i)
+
+    def 显示上次(self, 数据):
+        """打开仓库助手时：显示上一次运行的结果（公共\上次结果.py 存的），标明是什么时候跑的。"""
+        结果们 = 数据["结果们"]
+        名们 = 数据.get("模块们") or [项["模块"] for 项 in 结果们]
+        self.开始(名们, f"这是 {数据['开始']:%m/%d %H:%M} 那次运行的结果（打开仓库助手时自动显示）。")
+        self.显示结果(结果们)
+        没跑 = len(名们) - len(结果们)
+        有问题 = sum(1 for 项 in 结果们 if 项["状态"] not in ("成功", "无数据"))
+        self.进度条.setValue(len(结果们))
+        self.计数.setText(f"{len(结果们)} / {len(名们)}")
+        self.眉.setText(f"上一次运行 · {数据['开始']:%m/%d %H:%M} 开始 · " + " → ".join(map(显示名, 名们)))
+        self.进度文字.setText(f"上一次运行的结果（{数据['开始']:%m/%d %H:%M}）"
+                          + ("" if 数据.get("完成") else f"：那次没有跑完，{没跑} 个模块没有结果")
+                          + (f"，{有问题} 个模块有问题" if 有问题 else ""))
+        self.步骤文字.setText("这不是现在的数字。要最新的，到工作台点运行。")
+        self._进度图("记录", "注意" if 有问题 or not 数据.get("完成") else "次")
         for i in range(self.列表.count()):
-            条 = self.列表.item(i)
-            项 = 按名.get(条.data(Qt.UserRole))
-            if 项 is None:
-                continue
-            条.setData(状态角, 项["状态"])
-            条.setData(数字角, 项.get("数量") if 项["状态"] != "失败" else None)
-            条.setData(要看角, 结果页.要看数(项) or (len(结果页.提醒们(项)) if 结果页.提醒们(项) else 0))
-            条.setText(项["显示名"])
-            self._换详情(i, 结果页.一页(项, self.状态栏, self.手动发送))
-        # 有问题的先给人看：选中第一个失败/不完整的，没有就选第一个
-        先看 = next((i for i in range(self.列表.count()) if self.列表.item(i).data(状态角) not in ("成功", "无数据")), 0)
+            if i not in self.已显示:
+                self.列表.item(i).setData(状态角, "没跑到")
+                self._换详情(i, 空白提示("时钟", "那次没有跑到这个模块", "要看它的结果，到工作台运行一次。"))
+        先看 = next((i for i in sorted(self.已显示) if self.列表.item(i).data(状态角) not in ("成功", "无数据")),
+                  min(self.已显示) if self.已显示 else 0)
         self.列表.setCurrentRow(先看)
         self.详情.setCurrentIndex(先看)
 

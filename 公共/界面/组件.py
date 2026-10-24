@@ -46,9 +46,21 @@ class 卡片(QFrame):
         self.层.setSpacing(间距)
 
 
+class 图标标签(QLabel):
+    """显示一个图标字。样式表里总带上图标字体：不然全局样式的“微软雅黑”会盖掉它，
+    有的图标（例如 时钟、记录）就会被别的字体画成“小”“ㄅ”这样的错字（2026-10-24 发现）。"""
+
+    def __init__(self, 文字, 大小):
+        super().__init__(文字)
+        self.大小 = 大小
+        self.setFont(图标字体对象(大小))
+
+    def setStyleSheet(self, 样式):
+        super().setStyleSheet(f'font-family:"Segoe Fluent Icons","Segoe MDL2 Assets"; font-size:{self.大小}px; ' + 样式)
+
+
 def 图标字(名, 颜色=None, 大小=14):
-    l = QLabel(图码.get(名, 名))
-    l.setFont(图标字体对象(大小))
+    l = 图标标签(图码.get(名, 名), 大小)
     l.setStyleSheet(f"color:{颜色 or 色['次字']}; background:transparent;")
     l.setAlignment(Qt.AlignCenter)
     return l
