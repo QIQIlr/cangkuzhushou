@@ -61,6 +61,15 @@ class 可复制表格(QTableWidget):
         for r, 行 in enumerate(行们):
             加粗 = any(str(x).startswith("**") for x in 行)
             for c, 值 in enumerate(行):
+                if isinstance(值, dict):        # 可展开的格子：平时显示预览，单击展开全部
+                    格 = QTableWidgetItem(值["预览"])
+                    格.setData(Qt.UserRole, 值["全部"])
+                    格.setData(Qt.UserRole + 1, 值["预览"])
+                    格.setToolTip("单击展开 / 收起；双击复制全部内容")
+                    格.setForeground(Qt.black)
+                    格.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    self.setItem(r, c, 格)
+                    continue
                 格 = QTableWidgetItem(str(值).replace("**", ""))
                 if 多行:
                     格.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -86,6 +95,14 @@ class 可复制表格(QTableWidget):
             self.setMinimumHeight(min(高, 460))
             self.setMaximumHeight(高 if len(行们) <= 15 else 460)
         self.itemDoubleClicked.connect(lambda _: self.复制())
+        self.itemClicked.connect(self._展开收起)
+
+    def _展开收起(self, 格):
+        全部, 预览 = 格.data(Qt.UserRole), 格.data(Qt.UserRole + 1)
+        if not 全部 or not 预览:
+            return
+        格.setText(全部 + "\n……单击收起" if 格.text() == 预览 else 预览)
+        self._按宽度排行(self.columnWidth(self.columnCount() - 1))
 
     def _按宽度排行(self, 内容宽):
         """多行表：最后一列宽度跟着窗口走，按这个宽度自动换行，再把整个表格撑到正好放下所有行。"""
@@ -116,7 +133,7 @@ class 可复制表格(QTableWidget):
             return
         行们 = {}
         for g in 格们:
-            行们.setdefault(g.row(), []).append(g.text())
+            行们.setdefault(g.row(), []).append(g.data(Qt.UserRole) or g.text())
         文字 = "\n".join("\t".join(v) for v in 行们.values())
         QApplication.clipboard().setText(文字)
         self.状态栏.showMessage(f"已复制 {文字}" if len(格们) == 1 else f"已复制 {len(格们)} 格", 4000)
