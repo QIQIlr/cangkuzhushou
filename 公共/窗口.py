@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDial
                                QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem,
                                QSplitter, QVBoxLayout, QWidget)
 
-from 公共 import 模块设置, 飞书  # noqa: E402
+from 公共 import 模块设置, 结果页, 飞书  # noqa: E402
 from 公共.模块参数 import 显示名  # noqa: E402
 from 公共.wms import WMS首页, 专用配置目录, 专用窗口开着  # noqa: E402
 from 公共.日志 import 日志根, 运行记录  # noqa: E402
@@ -43,168 +43,6 @@ class 传话(QObject):
     出错 = Signal(str)
     需要登录 = Signal(int)
     需要选择 = Signal(object)
-
-
-class 可复制表格(QTableWidget):
-    """结果表格：只读；单击选中一格，Ctrl+C 或双击就把这一格的内容复制到剪贴板，状态栏提示“已复制 XXX”。
-    多行=True：文字靠左靠上、自动换行、表格按内容撑开高度（飞书任务明细这种“项目｜内容”的表用）。"""
-
-    def __init__(self, 列名, 行们, 状态栏, 多行=False):
-        super().__init__(len(行们), len(列名))
-        self.状态栏 = 状态栏
-        self.setHorizontalHeaderLabels(列名)
-        self.verticalHeader().setVisible(False)
-        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.setSelectionBehavior(QAbstractItemView.SelectItems)
-        粗体 = QFont()
-        粗体.setBold(True)
-        for r, 行 in enumerate(行们):
-            加粗 = any(str(x).startswith("**") for x in 行)
-            for c, 值 in enumerate(行):
-                if isinstance(值, dict):        # 可展开的格子：平时显示预览，单击展开全部
-                    格 = QTableWidgetItem(值["预览"])
-                    格.setData(Qt.UserRole, 值["全部"])
-                    格.setData(Qt.UserRole + 1, 值["预览"])
-                    格.setToolTip("单击展开 / 收起；双击复制全部内容")
-                    格.setForeground(Qt.black)
-                    格.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
-                    self.setItem(r, c, 格)
-                    continue
-                格 = QTableWidgetItem(str(值).replace("**", ""))
-                if 多行:
-                    格.setTextAlignment(Qt.AlignLeft | Qt.AlignTop)
-                else:
-                    格.setTextAlignment((Qt.AlignLeft if c == 0 or isinstance(值, str) and "-" in str(值) else Qt.AlignRight) | Qt.AlignVCenter)
-                if 加粗:
-                    格.setFont(粗体)
-                if "⚠" in str(值) or str(值) == "失败":
-                    格.setForeground(Qt.darkRed)
-                self.setItem(r, c, 格)
-        self.多行 = 多行
-        if 多行:
-            self.setWordWrap(True)
-            self.resizeColumnToContents(0)
-            self.horizontalHeader().setStretchLastSection(True)
-            self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            self._按宽度排行(620)
-        else:
-            self.resizeColumnsToContents()
-            self.horizontalHeader().setStretchLastSection(True)
-            高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(min(len(行们), 15))) + 6
-            self.setMinimumHeight(min(高, 460))
-            self.setMaximumHeight(高 if len(行们) <= 15 else 460)
-        self.itemDoubleClicked.connect(lambda _: self.复制())
-        self.itemClicked.connect(self._展开收起)
-
-    def _展开收起(self, 格):
-        全部, 预览 = 格.data(Qt.UserRole), 格.data(Qt.UserRole + 1)
-        if not 全部 or not 预览:
-            return
-        格.setText(全部 + "\n……单击收起" if 格.text() == 预览 else 预览)
-        self._按宽度排行(self.columnWidth(self.columnCount() - 1))
-
-    def _按宽度排行(self, 内容宽):
-        """多行表：最后一列宽度跟着窗口走，按这个宽度自动换行，再把整个表格撑到正好放下所有行。"""
-        if self.columnCount() > 1:
-            self.setColumnWidth(self.columnCount() - 1, max(200, 内容宽))
-        self.resizeRowsToContents()
-        高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(self.rowCount())) + 2 * self.frameWidth() + 2
-        self.setMinimumHeight(高)
-        self.setMaximumHeight(高)
-
-    def resizeEvent(self, 事件):
-        super().resizeEvent(事件)
-        if getattr(self, "多行", False):
-            宽 = self.viewport().width() - sum(self.columnWidth(c) for c in range(self.columnCount() - 1))
-            if abs(宽 - self.columnWidth(self.columnCount() - 1)) > 4:
-                self._按宽度排行(宽)
-
-    def keyPressEvent(self, 事件):
-        if 事件.matches(QKeySequence.Copy):
-            self.复制()
-        else:
-            super().keyPressEvent(事件)
-
-    def 复制(self):
-        """复制选中的格子：一格就只复制这一格；多格按行排好（同一行用 Tab 隔开，每行一行）。"""
-        格们 = sorted(self.selectedItems(), key=lambda g: (g.row(), g.column()))
-        if not 格们:
-            return
-        行们 = {}
-        for g in 格们:
-            行们.setdefault(g.row(), []).append(g.data(Qt.UserRole) or g.text())
-        文字 = "\n".join("\t".join(v) for v in 行们.values())
-        QApplication.clipboard().setText(文字)
-        self.状态栏.showMessage(f"已复制 {文字}" if len(格们) == 1 else f"已复制 {len(格们)} 格", 4000)
-
-
-class 分组视图(QWidget):
-    """无任务包裹这类结果：上面总览（区域｜数量｜状态），点某个区 → 下面换成这个区的单号；
-    “复制本区全部单号”按钮复制成文字表（标题 + 每行 序号<Tab>单号）。"""
-
-    def __init__(self, 分组, 状态栏):
-        super().__init__()
-        self.状态栏 = 状态栏
-        self.明细 = {区: (单号们, 文字) for 区, 单号们, 文字 in 分组["明细"]}
-        层 = QVBoxLayout(self)
-        层.setContentsMargins(0, 0, 0, 0)
-        层.addWidget(QLabel("各区域数量（点某一行，下面显示这个区的单号）："))
-        列名, 行们 = 分组["总览"]
-        self.总览 = 可复制表格(列名, 行们, 状态栏)
-        self.总览.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.总览.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.总览.itemSelectionChanged.connect(self._换区)
-        层.addWidget(self.总览)
-        头 = QHBoxLayout()
-        self.明细标题 = QLabel("")
-        self.明细标题.setStyleSheet("font-weight:bold")
-        头.addWidget(self.明细标题, 1)
-        self.复制按钮 = QPushButton("复制本区全部单号")
-        self.复制按钮.clicked.connect(self._复制全部)
-        头.addWidget(self.复制按钮)
-        层.addLayout(头)
-        self.明细层 = QVBoxLayout()
-        层.addLayout(self.明细层)
-        self.当前区 = None
-        # 默认显示第一个有单号的区
-        for r in range(self.总览.rowCount()):
-            if self.总览.item(r, 0).text() in self.明细:
-                self.总览.selectRow(r)
-                break
-        else:
-            self._显示(None)
-
-    def _换区(self):
-        行 = self.总览.currentRow()
-        区 = self.总览.item(行, 0).text() if 行 >= 0 else None
-        self._显示(区)
-
-    def _显示(self, 区):
-        while self.明细层.count():
-            w = self.明细层.takeAt(0).widget()
-            if w:
-                w.hide()          # 先藏起来，不然换区的一瞬间旧表格还在
-                w.deleteLater()
-        self.当前区 = 区 if 区 in self.明细 else None
-        if self.当前区 is None:
-            self.明细标题.setText("（这个区没有单号）" if 区 else "（没有单号）")
-            self.复制按钮.setEnabled(False)
-            return
-        单号们, _ = self.明细[区]
-        self.明细标题.setText(f"{区} 的转运单号（{len(单号们)} 个；单击 + Ctrl+C 复制一个）")
-        self.复制按钮.setEnabled(True)
-        位数 = max(2, len(str(len(单号们))))
-        self.明细层.addWidget(可复制表格(["序号", "转运单号"],
-                                     [[str(i).zfill(位数), 号] for i, 号 in enumerate(单号们, 1)], self.状态栏))
-
-    def _复制全部(self):
-        if self.当前区 is None:
-            return
-        单号们, 文字 = self.明细[self.当前区]
-        QApplication.clipboard().setText(文字)
-        self.状态栏.showMessage(f"已复制 {self.当前区} {len(单号们)} 个单号", 5000)
 
 
 class 任务选择窗口(QDialog):
@@ -260,89 +98,6 @@ class 任务选择窗口(QDialog):
     def 选中(self):
         return [self.列表.item(i).data(Qt.UserRole) for i in range(self.列表.count())
                 if self.列表.item(i).checkState() == Qt.Checked]
-
-
-def _网页字(文字):
-    import html
-    return html.escape(str(文字)).replace("\n", "<br>")
-
-
-class 面单页(QWidget):
-    """转寄退货任务这类结果（消息里有“面单”）：左边是读到的任务，点一条，右边按佐川面单的顺序显示，
-    字大一点，方便照着手写。内容物、评论、其他信息平时只显示几条，点“还有……”展开。"""
-
-    def __init__(self, 项, 状态栏):
-        super().__init__()
-        self.页们 = 项["面单"]
-        self.展开 = set()
-        层 = QVBoxLayout(self)
-        层.setContentsMargins(4, 4, 4, 4)
-        for 句 in 项.get("备注", []):
-            注 = QLabel(句)
-            注.setWordWrap(True)
-            注.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            注.setStyleSheet("color:#b35c00" if "⚠" in 句 else "")
-            层.addWidget(注)
-        分 = QSplitter(Qt.Horizontal)
-        self.列表 = QListWidget()
-        self.列表.setStyleSheet("QListWidget::item { padding: 6px 2px; border-bottom: 1px solid #e6e6e6; }"
-                                "QListWidget::item:selected { background: #cfe3ff; color: black; }")
-        for 页 in self.页们:
-            条 = QListWidgetItem(页["列表名"])
-            条.setToolTip(页["标题"])
-            if "⚠" in 页["列表名"]:
-                条.setForeground(Qt.darkRed)
-            self.列表.addItem(条)
-        self.列表.currentRowChanged.connect(self._显示)
-        右 = QScrollArea()
-        右.setWidgetResizable(True)
-        self.详情 = QLabel()
-        self.详情.setWordWrap(True)
-        self.详情.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.详情.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
-        self.详情.linkActivated.connect(self._点链接)
-        self.详情.setContentsMargins(10, 6, 10, 10)
-        右.setWidget(self.详情)
-        分.addWidget(self.列表)
-        分.addWidget(右)
-        分.setStretchFactor(1, 3)
-        分.setSizes([280, 720])
-        层.addWidget(分, 1)
-        if self.页们:
-            self.列表.setCurrentRow(0)
-        else:
-            self.详情.setText("（这次没有读取任务）")
-
-    def _点链接(self, 键):
-        行 = self.列表.currentRow()
-        self.展开 ^= {(行, 键)}
-        self._显示(行)
-
-    def _显示(self, 行):
-        if 行 < 0:
-            return
-        页 = self.页们[行]
-        字 = _网页字
-        h = "<div style='font-size:13pt'>"
-        h += f"<p style='color:#666; font-size:10pt'>{字(页['标题'])}</p>"
-        if 页["提醒"]:
-            h += "<p style='color:#b00000; font-weight:bold'>⚠ " + "<br>⚠ ".join(字(x) for x in 页["提醒"]) + "</p>"
-        for 段名, 项们 in 页["段们"]:
-            h += (f"<p style='margin:12px 0 2px 0; padding:3px 6px; background:#e8eef6; font-weight:bold'>{字(段名)}</p>"
-                  "<table cellspacing='0' cellpadding='4'>")
-            for x in 项们:
-                键 = f"{段名}|{x['名']}"
-                if x.get("预览") and (行, 键) not in self.展开:
-                    值 = 字(x["预览"]) + f"<br><a href='{字(键)}'>{字(x['还有'])}</a>"
-                elif x.get("预览"):
-                    值 = 字(x["值"]) + f"<br><a href='{字(键)}'>……收起</a>"
-                else:
-                    值 = 字(x["值"])
-                颜色 = "#999" if str(x["值"]).startswith("（") else "#000"
-                h += (f"<tr><td valign='top' style='color:#666; padding-right:14px; white-space:nowrap'>{字(x['名'])}</td>"
-                      f"<td style='color:{颜色}'>{值}</td></tr>")
-            h += "</table>"
-        self.详情.setText(h + "</div>")
 
 
 class 飞书设置窗口(QDialog):
@@ -566,21 +321,13 @@ class 主窗口(QMainWindow):
         结果框 = QWidget()
         结果层 = QVBoxLayout(结果框)
         结果层.setContentsMargins(0, 0, 0, 0)
-        结果层.addWidget(QLabel("结果（每个模块一页，点上面的标签切换；表格里单击选中一格，Ctrl+C 或双击复制）："))
+        结果层.addWidget(QLabel("结果："))
         self.结果页 = QTabWidget()
         结果层.addWidget(self.结果页)
         上下.addWidget(结果框)
         上下.setStretchFactor(1, 4)
         上下.setSizes([90, 700])
         右层.addWidget(上下, 1)
-        行2 = QHBoxLayout()
-        self.飞书状态 = QLabel("")
-        行2.addWidget(self.飞书状态, 1)
-        self.开本次日志按钮 = QPushButton("打开本次日志文件夹")
-        self.开本次日志按钮.setEnabled(False)
-        self.开本次日志按钮.clicked.connect(lambda: self.本次日志 and os.startfile(self.本次日志))
-        行2.addWidget(self.开本次日志按钮)
-        右层.addLayout(行2)
         分.addWidget(右)
         分.setSizes([380, 720])
         总.addWidget(分, 1)
@@ -672,8 +419,6 @@ class 主窗口(QMainWindow):
         self._设可用(False)
         self.过程.clear()
         self.结果页.clear()
-        self.飞书状态.setText("")
-        self.开本次日志按钮.setEnabled(False)
         self.进度条.setMaximum(len(名列表))
         self.进度条.setValue(0)
         self.进度文字.setText("正在打开浏览器 ……")
@@ -717,87 +462,23 @@ class 主窗口(QMainWindow):
         运行记录.观察者 = None
         self.运行中 = False
         self._设可用(True)
-        飞书们, 坏的 = [], []
+        坏的 = []
         for 项 in 总结["消息们"]:
             状态, 说明 = 项["飞书"]
-            飞书们.append(f"{项['显示名']} {状态}")
             if 状态 in ("失败", "未知"):
                 坏的.append(f"{项['显示名']}：{状态}，{说明}")
         self._显示结果(总结["消息们"])
-        self.飞书状态.setText("飞书：" + "；".join(飞书们))
         self.本次日志 = 总结["日志文件夹"]
-        self.开本次日志按钮.setEnabled(True)
         有问题 = [r for r in 总结["结果们"] if r["状态"] not in ("成功", "无数据")]
         self.进度文字.setText("完成：全部正常 ✔" if not 有问题 else f"完成：{len(有问题)} 个模块有问题 ⚠（看下面的结果和建议）")
         if 坏的:
             QMessageBox.warning(self, "飞书没发成功", "\n".join(坏的))
 
     def _显示结果(self, 消息们):
-        """每个模块一页（标签页）：标题 + 结果 + 飞书/Excel。
-        有“面单”的模块（转寄退货任务）用面单页；有分组的用分组视图；有表格的用表格；都没有就显示文字。"""
+        """每个模块一页（标签页），样子统一，见 公共\结果页.py。"""
         self.结果页.clear()
         for 项 in 消息们:
-            好 = 项["状态"] in ("成功", "无数据")
-            self.结果页.addTab(self._一页(项), f"{'✔' if 好 else '⚠'} {项['显示名']}")
-
-    def _一页(self, 项):
-        外 = QWidget()
-        外层 = QVBoxLayout(外)
-        外层.setContentsMargins(4, 4, 4, 4)
-        标题 = QLabel(项.get("标题") or 项["显示名"])
-        标题.setStyleSheet("font-weight:bold; font-size:11pt")
-        标题.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        外层.addWidget(标题)
-        if 项.get("面单") is not None:
-            外层.addWidget(面单页(项, self.statusBar()), 1)
-        else:
-            滚 = QScrollArea()
-            滚.setWidgetResizable(True)
-            面板 = QWidget()
-            层 = QVBoxLayout(面板)
-            滚.setWidget(面板)
-            外层.addWidget(滚, 1)
-            if 项.get("分组"):
-                层.addWidget(分组视图(项["分组"], self.statusBar()))
-            elif 项.get("表们"):
-                for 表名, 列名, 行们 in 项["表们"]:
-                    if not 行们:
-                        continue
-                    if len(项["表们"]) > 1:
-                        名 = QLabel(表名)
-                        名.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                        if 项.get("左对齐多行"):
-                            名.setStyleSheet("font-weight:bold; margin-top:8px")
-                        层.addWidget(名)
-                    层.addWidget(可复制表格(列名, 行们, self.statusBar(), 多行=bool(项.get("左对齐多行"))))
-            else:
-                文 = QLabel(项["文字"])
-                文.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                层.addWidget(文)
-            if 项.get("分组") or 项.get("表们"):
-                for 句 in 项.get("备注", []):
-                    注 = QLabel(句)
-                    注.setWordWrap(True)
-                    注.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                    注.setStyleSheet("color:#b35c00" if "⚠" in 句 else "")
-                    层.addWidget(注)
-            层.addStretch(1)
-        状态, 说明 = 项["飞书"]
-        尾 = QHBoxLayout()
-        if 项.get("不发飞书"):
-            尾.addWidget(QLabel("这个模块只在窗口里看，不发飞书。"), 1)
-        else:
-            飞书字 = QLabel(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else ""))
-            尾.addWidget(飞书字, 1)
-            发 = QPushButton("发到飞书" if 状态 != "成功" else "再发一次到飞书")
-            发.clicked.connect(lambda _=False, 项=项, 字=飞书字, 钮=发: self._手动发送(项, 字, 钮))
-            尾.addWidget(发)
-        if 项.get("附件"):
-            b = QPushButton("打开 Excel")
-            b.clicked.connect(lambda _=False, p=项["附件"]: os.startfile(p))
-            尾.addWidget(b)
-        外层.addLayout(尾)
-        return 外
+            self.结果页.addTab(结果页.一页(项, self.statusBar(), self._手动发送), 结果页.标签字(项))
 
     def _手动发送(self, 项, 字, 钮):
         """把某个模块这次的结果发到飞书（运行时没发、或想再发一次时用）。发送情况记进这个模块的日志。"""
@@ -816,7 +497,9 @@ class 主窗口(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         项["飞书"] = (状态, 说明)
-        字.setText(f"飞书：{状态}" + (f"（{说明}）" if 状态 != "成功" else "（手动发送）"))
+        文字, 坏 = 结果页.飞书说明(状态, 说明, 手动=True)
+        字.setText(文字)
+        字.setStyleSheet(f"color:{结果页.色['坏'] if 坏 else 结果页.色['说明']};")
         钮.setText("再发一次到飞书" if 状态 == "成功" else "发到飞书")
         try:
             from 公共.日志 import 遮掩
