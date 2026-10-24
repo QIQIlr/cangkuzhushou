@@ -589,7 +589,7 @@ class 主窗口(QMainWindow):
         设置框 = QGroupBox("设置")
         设 = QHBoxLayout(设置框)
         for 文字, 函数 in (("设置飞书", self.设置飞书),
-                         ("登录 WMS", self.登录WMS), ("登录飞书", self.登录飞书),
+                         ("登录 WMS", self.登录WMS), ("登录飞书", self.登录飞书), ("更新邮编数据", self.更新邮编),
                          ("打开日志文件夹", lambda: os.startfile(日志根)),
                          ("刷新模块列表", self.刷新模块)):
             b = QPushButton(文字)
@@ -886,6 +886,20 @@ class 主窗口(QMainWindow):
             return
         subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
         QMessageBox.information(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
+
+    def 更新邮编(self):
+        from 公共 import 邮编
+        日期 = 邮编.数据日期()
+        问 = (f"现在的邮编数据是 {日期:%Y-%m-%d} 下载的。\n" if 日期 else "电脑上还没有邮编数据。\n") + \
+            "要从日本邮政官网下载最新的邮编数据吗？（约 2 MB，需要联网，官方每月更新一次）"
+        if QMessageBox.question(self, "更新邮编数据", 问, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            好, 说明 = 邮编.更新数据()
+        finally:
+            QApplication.restoreOverrideCursor()
+        (QMessageBox.information if 好 else QMessageBox.warning)(self, "更新邮编数据", 说明)
 
     def 登录飞书(self):
         if self.运行中:
