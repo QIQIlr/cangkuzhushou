@@ -1,10 +1,11 @@
 # 职责：仓库助手 窗口版（测试版）。双击 仓库助手（测试版）.vbs 打开，不出现黑色命令行窗口。
-# 内容：左边模块列表（勾选=启用，拖动或上移/下移=调顺序，改动立即保存到 模块设置.txt）；
-#       右边运行按钮、进度、运行过程、结果（和发到飞书的一样）、打开日志；
-#       下面设置：飞书、登录 WMS、登录飞书。
-# 说明：查询在后台线程里跑，窗口不会卡住；掉线时弹窗请你登录；
-#       飞书任务明细运行中会弹出“选择要读取的任务”窗口。
-#       业务逻辑全部复用 公共\运行.py 和各模块，这里只是“外壳”。
+# 2026-10-24 整体重新设计（小柒要求）：左侧导航 + 四个页面，样子统一见 公共\界面\主题.py。
+#   工作台：模块卡片（开关 = 启用，拖动 = 顺序，改动立即保存到 模块设置.txt）、运行按钮、需要注意、右侧模块设置
+#   运行结果：进度、这次运行的模块列表、每个模块的结果页（公共\结果页.py）、运行过程
+#   运行记录：日志\运行总表.csv
+#   设置：飞书、登录 WMS / 飞书、邮编数据、运行完自动发飞书、日志文件夹、刷新模块列表
+# 这个文件只管：程序入口、窗口外壳和导航、后台运行、掉线登录和运行中选任务的等待、关闭。
+# 查询在后台线程里跑，窗口不会卡住；业务逻辑全部复用 公共\运行.py 和各模块。
 import os
 import re
 import subprocess
@@ -18,14 +19,18 @@ from pathlib import Path
 sys.path.insert(0, str(根目录))
 
 from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
-from PySide6.QtGui import QFont, QKeySequence  # noqa: E402
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog, QFormLayout, QGroupBox,  # noqa: E402
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-                               QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem,
-                               QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QMainWindow,  # noqa: E402
+                               QMessageBox, QStackedWidget, QVBoxLayout, QWidget)
 
-from 公共 import 模块设置, 结果页, 飞书  # noqa: E402
+from 公共 import 结果页, 飞书  # noqa: E402
+from 公共.界面 import 主题  # noqa: E402
+from 公共.界面.主题 import 图标, 色  # noqa: E402
+from 公共.界面.弹窗 import 任务选择窗口, 飞书设置窗口  # noqa: E402,F401  （测试脚本也从这里拿）
+from 公共.界面.组件 import 图标字, 按钮, 标签  # noqa: E402
+from 公共.界面.工作台 import 工作台  # noqa: E402
+from 公共.界面.记录页 import 记录页  # noqa: E402
+from 公共.界面.设置页 import 设置页  # noqa: E402
+from 公共.界面.运行页 import 运行页  # noqa: E402
 from 公共.模块参数 import 显示名  # noqa: E402
 from 公共.wms import WMS首页, 专用配置目录, 专用窗口开着  # noqa: E402
 from 公共.日志 import 日志根, 运行记录  # noqa: E402
@@ -45,197 +50,14 @@ class 传话(QObject):
     需要选择 = Signal(object)
 
 
-class 任务选择窗口(QDialog):
-    """飞书任务明细：按飞书“我负责的”里的顺序列出全部标题，点一行勾选/取消，再点“开始读取”。
-    不分组、不排序、默认不勾（小柒 2026-10-24 确认）。"""
-
-    def __init__(self, 父, 清单):
-        super().__init__(父)
-        self.setWindowTitle("飞书任务明细：选择要读取的任务")
-        self.resize(1000, 660)
-        层 = QVBoxLayout(self)
-        行们, 应有 = 清单["行们"], 清单.get("应有")
-        头 = QLabel(f"“我负责的”共读到 {len(行们)} 条" + (f"，和页面显示的 {应有} 条一致 ✔" if 应有 == len(行们) else ""))
-        头.setStyleSheet("font-weight:bold; font-size:11pt")
-        层.addWidget(头)
-        for 句 in 清单.get("提醒", []):
-            注 = QLabel(句)
-            注.setWordWrap(True)
-            注.setStyleSheet("color:#b35c00")
-            层.addWidget(注)
-        层.addWidget(QLabel("按飞书里的顺序列出。点一行就勾选或取消（可以选多条），再点“开始读取”。每条大约 6～11 秒。"))
-        self.列表 = QListWidget()
-        self.列表.setStyleSheet("QListWidget::item { padding: 5px 2px; border-bottom: 1px solid #e6e6e6; }"
-                                "QListWidget::item:selected { background: #cfe3ff; color: black; }")
-        位数 = len(str(len(行们)))
-        for i, (编号, 标题, _) in enumerate(行们, 1):
-            项 = QListWidgetItem(f"{str(i).rjust(位数)}.  {标题}")
-            项.setData(Qt.UserRole, 编号)
-            项.setToolTip(标题)
-            项.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-            项.setCheckState(Qt.Unchecked)
-            self.列表.addItem(项)
-        self.列表.itemClicked.connect(self._切换)
-        层.addWidget(self.列表, 1)
-        行 = QHBoxLayout()
-        self.开始 = QPushButton("开始读取（已选 0 条）")
-        self.开始.setEnabled(False)
-        self.开始.setMinimumHeight(36)
-        self.开始.clicked.connect(self.accept)
-        取消 = QPushButton("取消（这次不读）")
-        取消.clicked.connect(self.reject)
-        行.addStretch(1)
-        行.addWidget(取消)
-        行.addWidget(self.开始)
-        层.addLayout(行)
-
-    def _切换(self, 项):
-        项.setCheckState(Qt.Unchecked if 项.checkState() == Qt.Checked else Qt.Checked)
-        数 = len(self.选中())
-        self.开始.setText(f"开始读取（已选 {数} 条）")
-        self.开始.setEnabled(数 > 0)
-
-    def 选中(self):
-        return [self.列表.item(i).data(Qt.UserRole) for i in range(self.列表.count())
-                if self.列表.item(i).checkState() == Qt.Checked]
-
-
-class 飞书设置窗口(QDialog):
-    def __init__(self, 父):
-        super().__init__(父)
-        self.setWindowTitle("设置飞书群机器人")
-        self.setMinimumWidth(520)
-        层 = QVBoxLayout(self)
-        层.addWidget(QLabel("在飞书群设置 → 群机器人 → 你的机器人 里复制 Webhook 地址，粘贴到下面。\n"
-                           "点“测试并保存”会发一条测试消息，成功才保存。"))
-        表 = QFormLayout()
-        self.网址 = QLineEdit()
-        self.网址.setEchoMode(QLineEdit.Password)
-        self.网址.setPlaceholderText("https://open.feishu.cn/open-apis/bot/v2/hook/……（输入时不显示）")
-        self.关键词 = QLineEdit(飞书.读设置().get("飞书关键词", ""))
-        self.关键词.setPlaceholderText("机器人“安全设置”里的自定义关键词；没有就空着")
-        表.addRow("Webhook 地址：", self.网址)
-        表.addRow("自定义关键词：", self.关键词)
-        层.addLayout(表)
-        if 飞书.可以发送():
-            层.addWidget(QLabel("✔ 目前已经设置好。只有换群或换机器人时才需要重新填。"))
-        按钮 = QPushButton("测试并保存")
-        按钮.clicked.connect(self.测试)
-        层.addWidget(按钮)
-
-    def 测试(self):
-        网址 = self.网址.text().strip()
-        if not 飞书.格式.match(网址):
-            QMessageBox.warning(self, "地址不对", "这不像飞书 Webhook 地址，应该以\nhttps://open.feishu.cn/open-apis/bot/v2/hook/ 开头。")
-            return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            状态, 说明 = 飞书.发送("【测试】仓库助手 飞书连接测试", 网址=网址, 关键词=self.关键词.text().strip())
-        finally:
-            QApplication.restoreOverrideCursor()
-        if 状态 == "成功":
-            飞书.写设置({"飞书Webhook": 网址, "飞书关键词": self.关键词.text().strip(), "飞书已测通": "是"})
-            QMessageBox.information(self, "成功", "✔ 成功！飞书群里应该收到了一条测试消息。\n设置已保存。")
-            self.accept()
-        else:
-            QMessageBox.warning(self, "没有成功", f"测试没有成功（{状态}）：{说明}\n\n设置没有保存。")
-
-
-class 模块设置窗口(QDialog):
-    """一个模块自己的设置：查询区域或查询范围（模块有这项时）、发到飞书。改完点“保存”。"""
-
-    def __init__(self, 父, 模块名):
-        super().__init__(父)
-        import importlib
-        from 公共 import 模块参数
-        self.模块参数, self.模块名 = 模块参数, 模块名
-        try:
-            模块 = importlib.import_module(f"模块.{模块名}")
-            默认 = getattr(模块, "默认参数", {})
-            可发 = getattr(模块, "可发飞书", True)
-        except Exception:
-            默认, 可发 = {}, True
-        self.参数 = 模块参数.读取(模块名, 默认)
-        self.setWindowTitle(f"模块设置：{模块参数.显示名(模块名)}")
-        self.setMinimumWidth(420)
-        层 = QVBoxLayout(self)
-        # 名字：窗口、飞书卡片、Excel、日志里都用这个名字；原名固定不变，程序靠原名认模块
-        名组 = QGroupBox("名字")
-        名层 = QVBoxLayout(名组)
-        名行 = QHBoxLayout()
-        self.名字框 = QLineEdit(模块参数.显示名(模块名))
-        self.名字框.setMaxLength(模块参数.最长)
-        名行.addWidget(self.名字框, 1)
-        恢复 = QPushButton("恢复原名")
-        恢复.clicked.connect(lambda: self.名字框.setText(模块名))
-        名行.addWidget(恢复)
-        名层.addLayout(名行)
-        名层.addWidget(QLabel(f"原名：{模块名}（固定不变）。改名后，窗口、飞书卡片、Excel、日志都用新名字；\n"
-                             f"勾选、顺序和下面的设置都不变。最多 {模块参数.最长} 个字，不能有 {' '.join(模块参数.不能用的符号)}"))
-        层.addWidget(名组)
-        self.区域框 = {}
-        self.范围框 = {}
-        if "查询范围" in self.参数:
-            from 公共.待处理 import 仓库, 范围选项
-            组 = QGroupBox("查询范围（每个勾选项单独一张表、一张飞书卡片）")
-            格 = QVBoxLayout(组)
-            for 名 in 范围选项:
-                说明 = f"{名}（{' + '.join(仓库[名])}）" if 名 in 仓库 else (f"{名}（测试区）" if 名 == "B区" else f"{名}（单独）")
-                框 = QCheckBox(说明)
-                框.setChecked(名 in self.参数["查询范围"])
-                self.范围框[名] = 框
-                格.addWidget(框)
-            层.addWidget(组)
-            层.addWidget(QLabel("一般勾仓库就行；想单独看某个区时再勾那个区。"))
-        if "区域" in self.参数:
-            组 = QGroupBox("查询区域（勾选要查的区域；表格/结果按这里的顺序）")
-            行 = QHBoxLayout(组)
-            for 区 in 模块参数.区域选项():
-                框 = QCheckBox(区)
-                框.setChecked(区 in self.参数["区域"])
-                self.区域框[区] = 框
-                行.addWidget(框)
-            层.addWidget(组)
-            层.addWidget(QLabel("区域选项来自 WMS 的“所属区域”下拉（运行待审核、待拣货、待增值时会自动更新）。"))
-        self.发送框 = QCheckBox("结果发到飞书")
-        self.发送框.setChecked(self.参数.get("发到飞书", True) and 可发)
-        if 可发:
-            层.addWidget(self.发送框)
-        else:
-            层.addWidget(QLabel("这个模块的结果只在仓库助手窗口里看，不发飞书。"))
-        保存 = QPushButton("保存")
-        保存.clicked.connect(self.保存)
-        层.addWidget(保存)
-
-    def 保存(self):
-        新名 = self.名字框.text().strip()
-        问题 = self.模块参数.检查名字(self.模块名, 新名, 模块设置.所有模块())
-        if 问题:
-            QMessageBox.warning(self, "名字不能用", 问题)
-            return
-        if self.范围框:
-            选中 = [名 for 名, 框 in self.范围框.items() if 框.isChecked()]
-            if not 选中:
-                QMessageBox.warning(self, "至少选一个", "请至少勾选一个仓库或区域。")
-                return
-            self.参数["查询范围"] = 选中
-        if self.区域框:
-            选中 = [区 for 区, 框 in self.区域框.items() if 框.isChecked()]
-            if not 选中:
-                QMessageBox.warning(self, "至少选一个区域", "请至少勾选一个区域。")
-                return
-            self.参数["区域"] = 选中
-        self.参数["发到飞书"] = self.发送框.isChecked()
-        self.模块参数.保存(self.模块名, self.参数)
-        self.模块参数.保存显示名(self.模块名, 新名)
-        self.accept()
-
-
 class 主窗口(QMainWindow):
+    页名 = ["工作台", "运行结果", "运行记录", "设置"]
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("仓库助手（测试版）")
-        self.resize(1100, 720)
+        self.resize(1180, 760)
+        self.setMinimumSize(1000, 640)
         self.运行中 = False
         self.本次日志 = None
         self.登录回答 = None
@@ -251,180 +73,117 @@ class 主窗口(QMainWindow):
         self.传话.需要登录.connect(self._请登录)
         self.传话.需要选择.connect(self._请选择)
         self._搭界面()
-        self.刷新模块()
 
-    # ---------- 界面 ----------
+    # ---------- 外壳：左侧导航 + 页面 ----------
     def _搭界面(self):
-        中心 = QWidget()
-        总 = QVBoxLayout(中心)
-        分 = QSplitter(Qt.Horizontal)
-
-        # 左：模块列表
-        左框 = QGroupBox("模块（勾选 = 启用；拖动或用按钮调顺序）")
-        左 = QVBoxLayout(左框)
-        self.列表 = QListWidget()
-        self.列表.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.列表.setDragDropMode(QAbstractItemView.InternalMove)
-        self.列表.itemChanged.connect(lambda _: self.保存模块())
-        self.列表.model().rowsMoved.connect(lambda *_: self.保存模块())
-        左.addWidget(self.列表)
-        行 = QHBoxLayout()
-        for 文字, 方向 in (("▲ 上移", -1), ("▼ 下移", 1)):
-            b = QPushButton(文字)
-            b.clicked.connect(lambda _=False, d=方向: self.移动(d))
-            行.addWidget(b)
-        设 = QPushButton("⚙ 设置（名字、区域等）")
-        设.clicked.connect(self.模块设置)
-        行.addWidget(设)
-        self.列表.itemDoubleClicked.connect(lambda _: self.模块设置())
-        左.addLayout(行)
-        self.提醒 = QLabel("")
-        self.提醒.setWordWrap(True)
-        self.提醒.setStyleSheet("color:#b35c00")
-        左.addWidget(self.提醒)
-        self.运行全部按钮 = QPushButton("▶ 运行已启用模块")
-        self.运行选中按钮 = QPushButton("▶ 只运行选中的模块")
-        for b in (self.运行全部按钮, self.运行选中按钮):
-            b.setMinimumHeight(40)
-        self.运行全部按钮.clicked.connect(self.运行全部)
-        self.运行选中按钮.clicked.connect(self.运行选中)
-        左.addWidget(self.运行全部按钮)
-        左.addWidget(self.运行选中按钮)
         from 公共 import 模块参数
-        self.自动发 = QCheckBox("运行完自动发到飞书（按各模块的设置）")
-        self.自动发.setChecked(bool(模块参数.界面设置("运行完自动发飞书", True)))
-        self.自动发.toggled.connect(lambda 开: 模块参数.保存界面设置("运行完自动发飞书", 开))
-        左.addWidget(self.自动发)
-        左.addWidget(QLabel("不勾选时：结果只在窗口里显示，想发哪个就点那个结果下面的“发到飞书”。"))
-        左.addWidget(QLabel("提示：按住 Ctrl 可以选多个；“只运行选中的”时，禁用的模块也会运行。"))
-        分.addWidget(左框)
+        中心 = QWidget()
+        总 = QHBoxLayout(中心)
+        总.setContentsMargins(0, 0, 0, 0)
+        总.setSpacing(0)
 
-        # 右：进度、过程、结果
-        右 = QWidget()
-        右层 = QVBoxLayout(右)
-        self.进度文字 = QLabel("还没有运行。")
-        self.进度条 = QProgressBar()
-        self.进度条.setValue(0)
-        右层.addWidget(self.进度文字)
-        右层.addWidget(self.进度条)
-        上下 = QSplitter(Qt.Vertical)      # 运行过程和结果之间可以拖动调大小
-        过程框 = QWidget()
-        过程层 = QVBoxLayout(过程框)
-        过程层.setContentsMargins(0, 0, 0, 0)
-        过程层.addWidget(QLabel("运行过程："))
-        self.过程 = QPlainTextEdit()
-        self.过程.setReadOnly(True)
-        self.过程.setMaximumBlockCount(2000)
-        self.过程.setMinimumHeight(50)
-        过程层.addWidget(self.过程)
-        上下.addWidget(过程框)
-        结果框 = QWidget()
-        结果层 = QVBoxLayout(结果框)
-        结果层.setContentsMargins(0, 0, 0, 0)
-        结果层.addWidget(QLabel("结果："))
-        self.结果页 = QTabWidget()
-        结果层.addWidget(self.结果页)
-        上下.addWidget(结果框)
-        上下.setStretchFactor(1, 4)
-        上下.setSizes([90, 700])
-        右层.addWidget(上下, 1)
-        分.addWidget(右)
-        分.setSizes([380, 720])
-        总.addWidget(分, 1)
+        侧 = QFrame()
+        侧.setObjectName("侧栏")
+        侧.setFixedWidth(212)
+        侧层 = QVBoxLayout(侧)
+        侧层.setContentsMargins(14, 18, 14, 14)
+        侧层.setSpacing(4)
+        标 = QHBoxLayout()
+        标.setSpacing(10)
+        徽 = 图标字("包裹", "#FFFFFF", 16)
+        徽.setFixedSize(34, 34)
+        徽.setStyleSheet(f"color:white; background:{色['主']}; border-radius:9px;")
+        标.addWidget(徽)
+        名层 = QVBoxLayout()
+        名层.setSpacing(0)
+        名 = 标签("仓库助手")
+        名.setStyleSheet("font-size:13pt; font-weight:bold;")
+        名层.addWidget(名)
+        名层.addWidget(标签("测试版 · 只查询不改数据", "说明"))
+        标.addLayout(名层, 1)
+        侧层.addLayout(标)
+        侧层.addSpacing(18)
+        侧层.addWidget(标签("  菜单", "组名"))
+        self.导航组 = QButtonGroup(self)
+        self.导航钮 = []
+        图们 = ["首页", "运行", "记录", "设置"]
+        for i, (页, 图) in enumerate(zip(self.页名, 图们)):
+            b = 按钮(页, 图=图)
+            b.setProperty("nav", "1")
+            b.setCheckable(True)
+            b.setIconSize(b.iconSize())
+            self.导航组.addButton(b, i)
+            self.导航钮.append(b)
+            if 页 == "设置":
+                侧层.addStretch(1)
+                self.运行中标 = 标签("", "说明")
+                self.运行中标.setWordWrap(True)
+                侧层.addWidget(self.运行中标)
+                侧层.addSpacing(6)
+            侧层.addWidget(b)
+        self.导航组.idClicked.connect(self.去)
+        总.addWidget(侧)
 
-        # 下：设置
-        设置框 = QGroupBox("设置")
-        设 = QHBoxLayout(设置框)
-        for 文字, 函数 in (("设置飞书", self.设置飞书),
-                         ("登录 WMS", self.登录WMS), ("登录飞书", self.登录飞书), ("更新邮编数据", self.更新邮编),
-                         ("打开日志文件夹", lambda: os.startfile(日志根)),
-                         ("刷新模块列表", self.刷新模块)):
-            b = QPushButton(文字)
-            b.clicked.connect(函数)
-            设.addWidget(b)
-        总.addWidget(设置框)
+        self.页们 = QStackedWidget()
+        self.工作台 = 工作台(模块参数.界面设置("运行完自动发飞书", True))
+        self.工作台.自动发.toggled.connect(lambda 开: 模块参数.保存界面设置("运行完自动发飞书", 开))
+        self.工作台.运行请求.connect(self.开始运行)
+        self.工作台.去看记录.connect(lambda: self.去(2))
+        self.运行页 = 运行页(self.statusBar(), self._手动发送)
+        self.运行页.去工作台.connect(lambda: self.去(0))
+        self.记录页 = 记录页(self.statusBar())
+        self.设置页 = 设置页({"设置飞书": self.设置飞书, "登录WMS": self.登录WMS, "登录飞书": self.登录飞书,
+                          "更新邮编": self.更新邮编, "打开日志": lambda: os.startfile(日志根),
+                          "刷新模块": self.刷新模块}, self.工作台.自动发, 测试不发送)
+        for 页 in (self.工作台, self.运行页, self.记录页, self.设置页):
+            self.页们.addWidget(页)
+        总.addWidget(self.页们, 1)
         self.setCentralWidget(中心)
-        if 测试不发送:
-            self.statusBar().showMessage("测试模式：不发飞书")
+        self.自动发 = self.工作台.自动发
+        self.statusBar().showMessage("测试模式：不发飞书" if 测试不发送 else "")
+        self.去(0)
 
-    # ---------- 模块列表 ----------
+    def 去(self, 序号):
+        self.导航钮[序号].setChecked(True)
+        self.页们.setCurrentIndex(序号)
+        if 序号 == 2:
+            self.记录页.刷新()
+        elif 序号 == 3:
+            self.设置页.刷新()
+
     def 刷新模块(self):
-        清单, 提醒 = 模块设置.读取()
-        self.列表.blockSignals(True)
-        self.列表.clear()
-        for 名, 开 in 清单:
-            项 = QListWidgetItem(显示名(名))
-            项.setData(Qt.UserRole, 名)          # 原名：程序靠它认模块，显示的字可以改
-            if 显示名(名) != 名:
-                项.setToolTip(f"原名：{名}")
-            项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
-            项.setFlags(项.flags() & ~Qt.ItemIsDropEnabled)
-            项.setCheckState(Qt.Checked if 开 else Qt.Unchecked)
-            self.列表.addItem(项)
-        self.列表.blockSignals(False)
-        self.提醒.setText(("⚠ " + 提醒) if 提醒 else "")
+        self.工作台.刷新模块()
 
-    def 当前清单(self):
-        return [[self.列表.item(i).data(Qt.UserRole), self.列表.item(i).checkState() == Qt.Checked]
-                for i in range(self.列表.count())]
-
-    def 保存模块(self):
-        模块设置.保存(self.当前清单())
-
-    def 移动(self, 方向):
-        行 = self.列表.currentRow()
-        目标 = 行 + 方向
-        if 行 < 0 or not (0 <= 目标 < self.列表.count()):
-            return
-        self.列表.blockSignals(True)
-        项 = self.列表.takeItem(行)
-        self.列表.insertItem(目标, 项)
-        self.列表.setCurrentRow(目标)
-        self.列表.blockSignals(False)
-        self.保存模块()
-
-    def 模块设置(self):
-        项 = self.列表.currentItem()
-        if 项 is None:
-            QMessageBox.information(self, "模块设置", "请先在左边点选一个模块。")
-            return
-        行 = self.列表.row(项)
-        if 模块设置窗口(self, 项.data(Qt.UserRole)).exec() == QDialog.Accepted:
-            self.刷新模块()                    # 名字可能改了
-            self.列表.setCurrentRow(行)
+    def _运行标(self, 文字, 种="运行"):
+        self.运行中标.setText(文字)
+        self.运行中标.setStyleSheet(f"color:{色[种]}; background:{色[种 + '底']}; border-radius:8px; padding:6px 8px;"
+                                  if 文字 else "")
+        self.导航钮[1].setIcon(图标("运行", 色[种] if 文字 else 色["次字"]))
 
     # ---------- 运行 ----------
     def 运行全部(self):
-        self.开始运行([名 for 名, 开 in self.当前清单() if 开])
+        self.开始运行([名 for 名, 开 in self.工作台.当前清单() if 开])
 
     def 运行选中(self):
-        选中 = {项.data(Qt.UserRole) for 项 in self.列表.selectedItems()}
-        self.开始运行([名 for 名, _ in self.当前清单() if 名 in 选中])
-
-    def _设可用(self, 可用):
-        for b in (self.运行全部按钮, self.运行选中按钮):
-            b.setEnabled(可用)
-        self.列表.setEnabled(可用)
+        self.开始运行(self.工作台.选中的())
 
     def 开始运行(self, 名列表):
         if self.运行中:
             return
         if not 名列表:
-            QMessageBox.information(self, "没有模块", "没有要运行的模块。\n（运行全部：请先勾选启用；运行选中：请先点选模块。）")
+            QMessageBox.information(self, "没有模块", "没有要运行的模块。\n（运行已启用：请先打开模块的开关；只运行选中的：请先点选模块。）")
             return
         if 专用窗口开着():
             QMessageBox.warning(self, "请先关闭专用 Chrome", "“自动化专用 Chrome”窗口还开着（登录 WMS 时打开的那个）。\n请先关掉它，再点运行。")
             return
         self.运行中 = True
-        self._设可用(False)
-        self.过程.clear()
-        self.结果页.clear()
-        self.进度条.setMaximum(len(名列表))
-        self.进度条.setValue(0)
-        self.进度文字.setText("正在打开浏览器 ……")
-        self.过程.appendPlainText(f"{datetime.now():%H:%M:%S} 开始：{' → '.join(map(显示名, 名列表))}")
+        self.工作台.设可用(False)
+        self.运行页.开始(名列表, f"{datetime.now():%H:%M:%S} 开始：{' → '.join(map(显示名, 名列表))}")
+        self._运行标(f"正在运行 0/{len(名列表)}")
+        self.去(1)
         运行记录.观察者 = lambda 模块名, 文字: self.传话.步骤.emit(模块名, 文字)
         self._本次发送 = self.自动发.isChecked() and not 测试不发送   # 在窗口线程里读好，后台线程只用这个值
+        self._总数 = len(名列表)
         threading.Thread(target=self._后台运行, args=(名列表,), daemon=True).start()
 
     def _后台运行(self, 名列表):
@@ -445,45 +204,49 @@ class 主窗口(QMainWindow):
     def _显示步骤(self, 模块名, 文字):
         if 文字.startswith("-" * 10):
             return
-        self.过程.appendPlainText(f"[{模块名}] {文字}")
+        self.运行页.加一行(f"[{模块名}] {文字}")
         if re.match(r"第\d+步", 文字):
-            self.进度文字.setText(self.进度文字.text().split("｜")[0] + "｜" + 文字.rstrip(" …"))
+            self.运行页.步骤(文字)
 
     def _开始模块(self, 序号, 总数, 名):
-        self.进度文字.setText(f"正在运行 [{序号}/{总数}] {显示名(名)}")
+        self.运行页.模块开始(序号, 总数, 名)
+        self._运行标(f"正在运行 {序号}/{总数}\n{显示名(名)}")
 
     def _模块完成(self, 名, 结果):
-        self.进度条.setValue(self.进度条.value() + 1)
         好 = 结果["状态"] in ("成功", "无数据")
         数量 = f"，数量 {结果['数量']}" if 结果.get("数量") is not None else ""
-        self.过程.appendPlainText(f"{'✔' if 好 else '⚠'} {显示名(名)}：{结果['状态']}{数量}")
+        self.运行页.加一行(f"{'✔' if 好 else '⚠'} {显示名(名)}：{结果['状态']}{数量}")
+        self.运行页.模块完成(名, 结果)
 
     def _全部完成(self, 总结):
         运行记录.观察者 = None
         self.运行中 = False
-        self._设可用(True)
+        self.工作台.设可用(True)
         坏的 = []
         for 项 in 总结["消息们"]:
             状态, 说明 = 项["飞书"]
             if 状态 in ("失败", "未知"):
                 坏的.append(f"{项['显示名']}：{状态}，{说明}")
-        self._显示结果(总结["消息们"])
         self.本次日志 = 总结["日志文件夹"]
         有问题 = [r for r in 总结["结果们"] if r["状态"] not in ("成功", "无数据")]
-        self.进度文字.setText("完成：全部正常 ✔" if not 有问题 else f"完成：{len(有问题)} 个模块有问题 ⚠（看下面的结果和建议）")
+        self.运行页.全部完成(总结["消息们"], self.本次日志, len(有问题))
+        self._运行标(f"上次运行：{len(有问题)} 个模块有问题" if 有问题 else "上次运行：全部正常",
+                    "注意" if 有问题 else "好")
+        self.工作台.刷新模块()          # 卡片上的“上次结果”、需要注意
         if 坏的:
             QMessageBox.warning(self, "飞书没发成功", "\n".join(坏的))
 
     def _显示结果(self, 消息们):
-        """每个模块一页（标签页），样子统一，见 公共\结果页.py。"""
-        self.结果页.clear()
-        for 项 in 消息们:
-            self.结果页.addTab(结果页.一页(项, self.statusBar(), self._手动发送), 结果页.标签字(项))
+        """测试用：直接把一组结果显示在运行结果页。"""
+        self.运行页.开始([项["模块"] for 项 in 消息们], "")
+        self.运行页.全部完成(消息们, 消息们[0].get("日志文件夹") if 消息们 else None,
+                         sum(1 for 项 in 消息们 if 项["状态"] not in ("成功", "无数据")))
+        self.去(1)
 
     def _手动发送(self, 项, 字, 钮):
         """把某个模块这次的结果发到飞书（运行时没发、或想再发一次时用）。发送情况记进这个模块的日志。"""
         if not 飞书.可以发送():
-            QMessageBox.information(self, "飞书", "还没设置好飞书，请先点下面的“设置飞书”。")
+            QMessageBox.information(self, "飞书", "还没设置好飞书，请先到“设置”里点“设置飞书”。")
             return
         之前 = 项["飞书"][0]
         if 之前 in ("成功", "未知"):
@@ -514,9 +277,10 @@ class 主窗口(QMainWindow):
     def _运行出错(self, 详情):
         运行记录.观察者 = None
         self.运行中 = False
-        self._设可用(True)
+        self.工作台.设可用(True)
         _记下窗口错误(详情)
-        self.进度文字.setText("运行时出现意外错误 ⚠")
+        self.运行页.出错()
+        self._运行标("上次运行出现意外错误", "坏")
         QMessageBox.critical(self, "意外错误", "运行时出现意外错误。\n详情已保存到 日志\\窗口错误.txt，请把这件事告诉 Claude。")
 
     # ---------- 掉线登录 ----------
@@ -539,7 +303,7 @@ class 主窗口(QMainWindow):
         self.登录回答 = 框.clickedButton() is 好了
         self.登录事件.set()
 
-    # ---------- 运行中勾选（飞书任务明细） ----------
+    # ---------- 运行中勾选（转寄退货任务） ----------
     def _等选择(self, 清单):
         """后台线程调用：请窗口弹出勾选窗口，等人选好。返回勾选的编号列表；取消返回 None。"""
         self.选择事件.clear()
@@ -559,6 +323,7 @@ class 主窗口(QMainWindow):
     # ---------- 设置 ----------
     def 设置飞书(self):
         飞书设置窗口(self).exec()
+        self.设置页.刷新()
 
     def 登录WMS(self):
         if self.运行中:
@@ -583,6 +348,7 @@ class 主窗口(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         (QMessageBox.information if 好 else QMessageBox.warning)(self, "更新邮编数据", 说明)
+        self.设置页.刷新()
 
     def 登录飞书(self):
         if self.运行中:
@@ -630,7 +396,7 @@ def _意外(类型, 值, 追踪):
 def main():
     sys.excepthook = _意外
     应用 = QApplication(sys.argv)
-    应用.setFont(QFont("Microsoft YaHei UI", 10))
+    主题.套用(应用)
     日志根.mkdir(exist_ok=True)
     锁 = QLockFile(str(日志根 / "仓库助手窗口.lock"))
     if not 锁.tryLock(100):

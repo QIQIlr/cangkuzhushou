@@ -14,28 +14,29 @@ import os
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSplitter,
+                               QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSplitter,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-色 = {"好": "#1f7a3d", "好底": "#e6f4ea", "注意": "#9a5200", "注意底": "#fff4e0", "注意线": "#f0c27a", "注意字": "#5c3200",
-     "坏": "#b3261e", "坏底": "#fdecea", "坏线": "#f1a9a4", "坏字": "#5e1410",
-     "次": "#5f6368", "次底": "#eeeeee", "灰": "#9a9a9a", "说明": "#666666",
-     "选中": "#cfe3ff", "今天": "#eef5ff", "合计底": "#f3f3f3", "段": "#e8eef6"}
-等宽 = "Consolas"
+from 公共.界面 import 主题  # noqa: E402
+from 公共.界面.组件 import 状态标签  # noqa: E402
+
+# 颜色统一来自 公共\界面\主题.py（2026-10-24 整体重新设计）；这里只是起个结果页用惯的名字
+_主 = 主题.色
+色 = {"好": _主["好"], "好底": _主["好底"], "注意": _主["注意"], "注意底": _主["注意底"], "注意线": _主["注意线"],
+     "注意字": _主["注意字"], "坏": _主["坏"], "坏底": _主["坏底"], "坏线": _主["坏线"], "坏字": _主["坏字"],
+     "次": _主["次"], "次底": _主["次底"], "灰": _主["灰"], "说明": _主["弱字"],
+     "选中": _主["主浅"], "今天": _主["主浅"], "合计底": _主["面2"], "段": _主["底"], "线": _主["线"], "字": _主["字"]}
+等宽 = 主题.等宽
 状态样子 = {"成功": ("✔ 成功", "好"), "无数据": ("○ 无数据", "次"), "不完整": ("⚠ 不完整", "注意"), "失败": ("✖ 失败", "坏")}
 样式表 = f"""
-QFrame#坏框 {{ background:{色['坏底']}; border:1px solid {色['坏线']}; border-radius:6px; }}
-QFrame#坏框 QLabel {{ color:{色['坏字']}; background:transparent; border:none; }}
-QFrame#注意框 {{ background:{色['注意底']}; border:1px solid {色['注意线']}; border-radius:6px; }}
-QFrame#注意框 QLabel {{ color:{色['注意字']}; background:transparent; border:none; }}
-QPushButton[分段="1"] {{ border:1px solid #c4c4c4; padding:2px 14px; background:#ffffff; border-radius:0; }}
-QPushButton[分段="1"]:checked {{ background:{色['选中']}; font-weight:bold; }}
-QTableWidget#数量表 {{ gridline-color:#ececec; selection-background-color:{色['选中']}; selection-color:black; }}
-QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid #e9e9e9; }}
-QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:black; }}
-QListWidget#单号列表::item:selected {{ background:{色['选中']}; color:black; }}
+QTableWidget#数量表 {{ gridline-color:{色['线']}; border:1px solid {色['线']}; border-radius:8px;
+    selection-background-color:{色['选中']}; selection-color:{色['字']}; }}
+QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ border:1px solid {色['线']}; border-radius:8px; }}
+QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid {色['线']}; }}
+QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
+QListWidget#单号列表::item {{ border-radius:6px; }}
+QListWidget#单号列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
 """
-
 
 def _字(文字):
     return html.escape(str(文字)).replace("\n", "<br>")
@@ -83,14 +84,21 @@ def 标签字(项):
 def _结论条(项):
     行 = QHBoxLayout()
     行.setSpacing(10)
-    字, 种 = 状态样子.get(项["状态"], (项["状态"], "次"))
-    行.addWidget(_徽章(字, 种), 0, Qt.AlignTop)
-    结论 = _标签(项.get("结论") or 项.get("标题") or 项["显示名"], "font-size:12.5pt; font-weight:bold;")
-    行.addWidget(结论, 1)
+    左 = QVBoxLayout()
+    左.setSpacing(4)
+    眉 = QHBoxLayout()
+    眉.setSpacing(8)
+    眉.addWidget(状态标签(项["状态"]))
     if 要看数(项):
-        行.addWidget(_徽章(f"⚠ 其中 {要看数(项)} 条要看一下", "注意"), 0, Qt.AlignTop)
+        眉.addWidget(状态标签("不完整", f"其中 {要看数(项)} 条要看一下"))
+    眉.addWidget(_标签(项["显示名"], f"color:{色['说明']};", 可选=False, 换行=False))
+    眉.addStretch(1)
     if 项.get("时间"):
-        行.addWidget(_标签(f"查询时间 {项['时间']:%m/%d %H:%M}", f"color:{色['说明']};", 换行=False), 0, Qt.AlignTop)
+        眉.addWidget(_标签(f"查询时间 {项['时间']:%m/%d %H:%M}", f"color:{色['说明']};", 换行=False))
+    左.addLayout(眉)
+    结论 = _标签(项.get("结论") or 项.get("标题") or 项["显示名"], "font-size:15pt; font-weight:bold;")
+    左.addWidget(结论)
+    行.addLayout(左, 1)
     return 行
 
 
@@ -291,16 +299,22 @@ def _数量内容(项, 状态栏):
         格 = 数量表格(状态栏)
         视图们 = 表["视图们"]
         if len(视图们) > 1:
+            轨 = QFrame()                  # 灰底轨道，选中那段变白（主题里的“分段”）
+            轨.setObjectName("分段")
+            轨层 = QHBoxLayout(轨)
+            轨层.setContentsMargins(3, 3, 3, 3)
+            轨层.setSpacing(2)
+            头.addWidget(轨)
             组 = QButtonGroup(面板)
             for k, (视图名, 列, 行) in enumerate(视图们):
                 钮 = QPushButton(视图名)
-                钮.setProperty("分段", "1")
+                钮.setProperty("seg", "1")
                 钮.setCheckable(True)
                 钮.setChecked(k == 0)
                 钮.setCursor(Qt.PointingHandCursor)
                 钮.clicked.connect(lambda _=False, 列=列, 行=行, 起=表["起点"], 格=格: 格.填(列, 行, 起))
                 组.addButton(钮)
-                头.addWidget(钮)
+                轨层.addWidget(钮)
         头.addStretch(1)
         层.addLayout(头)
         格.填(视图们[0][1], 视图们[0][2], 表["起点"])
@@ -393,6 +407,8 @@ class 区域单号页(QWidget):
         右 = QVBoxLayout()
         头 = QHBoxLayout()
         self.标题 = _标签("", "font-weight:bold; font-size:11pt;", 换行=False)
+        self.标题.setMinimumWidth(40)               # 窄的时候标题让位，复制按钮的字不被挤掉
+        self.标题.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         头.addWidget(self.标题, 1)
         self.复制钮 = QPushButton("")
         self.复制钮.clicked.connect(self._复制全部)
@@ -575,8 +591,8 @@ def 一页(项, 状态栏, 发送):
     外 = QWidget()
     外.setStyleSheet(样式表)
     层 = QVBoxLayout(外)
-    层.setContentsMargins(10, 10, 10, 6)
-    层.setSpacing(8)
+    层.setContentsMargins(22, 18, 22, 14)
+    层.setSpacing(12)
     层.addLayout(_结论条(项))
     if 项.get("错误们"):
         层.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹")))
@@ -590,7 +606,8 @@ def 一页(项, 状态栏, 发送):
         层.addStretch(1)
     线 = QFrame()
     线.setFrameShape(QFrame.HLine)
-    线.setStyleSheet("color:#e3e3e3;")
+    线.setFixedHeight(1)
+    线.setStyleSheet(f"background:{色['线']}; border:none;")
     层.addWidget(线)
     层.addLayout(_底部(项, 发送))
     return 外
