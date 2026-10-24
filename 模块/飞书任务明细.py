@@ -15,7 +15,7 @@ from pathlib import Path
 
 根目录 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(根目录))
-from 公共 import 表格  # noqa: E402
+from 公共 import 表格, 模块参数  # noqa: E402
 from 公共 import 飞书网页 as 飞  # noqa: E402
 from 公共.错误 import 自动化错误, 数据不完整, 程序出错, 飞书异常, 需要登录飞书  # noqa: E402
 
@@ -439,7 +439,8 @@ def 任务名(序, 任务):
 def 组成消息(结果, 文件夹名, 用时=None):
     时间 = 结果["开始时间"]
     任务们 = 结果.get("任务们", [])
-    标题 = f"飞书任务明细（{时间:%m/%d %H:%M}）" + (f"读了 {结果['数量']} 条" if 结果.get("数量") is not None else "")
+    名 = 模块参数.显示名(模块名)   # 窗口里改过的名字
+    标题 = f"{名}（{时间:%m/%d %H:%M}）" + (f"读了 {结果['数量']} 条" if 结果.get("数量") is not None else "")
     备注 = list(结果.get("列表提醒", []))
     if 结果.get("取消"):
         备注.append("这次没有勾选任务，没有读详情。")
@@ -473,7 +474,7 @@ def 组成消息(结果, 文件夹名, 用时=None):
                     行们.append([序, t["标题"]] + [t["字段"][项] for 项 in 输出顺序] + [t["其他"], "\n".join(t["提醒"])])
                 else:
                     行们.append([序, t["标题"]] + [""] * len(输出顺序) + ["", f"{t['读取']}：{t.get('错误', '')}"])
-            附件 = str(根目录 / "日志" / 文件夹名 / f"飞书任务明细_{时间:%Y%m%d_%H%M}.xlsx")
+            附件 = str(根目录 / "日志" / 文件夹名 / f"{名}_{时间:%Y%m%d_%H%M}.xlsx")
             表格.存Excel多表(附件, 标题, [("明细", 列名, 行们)], 备注)
         except Exception:
             附件 = None

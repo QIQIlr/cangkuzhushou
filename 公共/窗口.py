@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDial
                                QSplitter, QVBoxLayout, QWidget)
 
 from 公共 import 模块设置, 飞书  # noqa: E402
+from 公共.模块参数 import 显示名  # noqa: E402
 from 公共.wms import WMS首页, 专用配置目录, 专用窗口开着  # noqa: E402
 from 公共.日志 import 日志根, 运行记录  # noqa: E402
 
@@ -314,9 +315,23 @@ class 模块设置窗口(QDialog):
         except Exception:
             默认 = {}
         self.参数 = 模块参数.读取(模块名, 默认)
-        self.setWindowTitle(f"模块设置：{模块名}")
+        self.setWindowTitle(f"模块设置：{模块参数.显示名(模块名)}")
         self.setMinimumWidth(420)
         层 = QVBoxLayout(self)
+        # 名字：窗口、飞书卡片、Excel、日志里都用这个名字；原名固定不变，程序靠原名认模块
+        名组 = QGroupBox("名字")
+        名层 = QVBoxLayout(名组)
+        名行 = QHBoxLayout()
+        self.名字框 = QLineEdit(模块参数.显示名(模块名))
+        self.名字框.setMaxLength(模块参数.最长)
+        名行.addWidget(self.名字框, 1)
+        恢复 = QPushButton("恢复原名")
+        恢复.clicked.connect(lambda: self.名字框.setText(模块名))
+        名行.addWidget(恢复)
+        名层.addLayout(名行)
+        名层.addWidget(QLabel(f"原名：{模块名}（固定不变）。改名后，窗口、飞书卡片、Excel、日志都用新名字；\n"
+                             f"勾选、顺序和下面的设置都不变。最多 {模块参数.最长} 个字，不能有 {' '.join(模块参数.不能用的符号)}"))
+        层.addWidget(名组)
         self.区域框 = {}
         self.范围框 = {}
         if "查询范围" in self.参数:
@@ -349,6 +364,11 @@ class 模块设置窗口(QDialog):
         层.addWidget(保存)
 
     def 保存(self):
+        新名 = self.名字框.text().strip()
+        问题 = self.模块参数.检查名字(self.模块名, 新名, 模块设置.所有模块())
+        if 问题:
+            QMessageBox.warning(self, "名字不能用", 问题)
+            return
         if self.范围框:
             选中 = [名 for 名, 框 in self.范围框.items() if 框.isChecked()]
             if not 选中:
@@ -363,6 +383,7 @@ class 模块设置窗口(QDialog):
             self.参数["区域"] = 选中
         self.参数["发到飞书"] = self.发送框.isChecked()
         self.模块参数.保存(self.模块名, self.参数)
+        self.模块参数.保存显示名(self.模块名, 新名)
         self.accept()
 
 
@@ -408,7 +429,7 @@ class 主窗口(QMainWindow):
             b = QPushButton(文字)
             b.clicked.connect(lambda _=False, d=方向: self.移动(d))
             行.addWidget(b)
-        设 = QPushButton("⚙ 设置（区域等）")
+        设 = QPushButton("⚙ 设置（名字、区域等）")
         设.clicked.connect(self.模块设置)
         行.addWidget(设)
         self.列表.itemDoubleClicked.connect(lambda _: self.模块设置())
@@ -485,7 +506,10 @@ class 主窗口(QMainWindow):
         self.列表.blockSignals(True)
         self.列表.clear()
         for 名, 开 in 清单:
-            项 = QListWidgetItem(名)
+            项 = QListWidgetItem(显示名(名))
+            项.setData(Qt.UserRole, 名)          # 原名：程序靠它认模块，显示的字可以改
+            if 显示名(名) != 名:
+                项.setToolTip(f"原名：{名}")
             项.setFlags(项.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
             项.setFlags(项.flags() & ~Qt.ItemIsDropEnabled)
             项.setCheckState(Qt.Checked if 开 else Qt.Unchecked)
@@ -494,7 +518,7 @@ class 主窗口(QMainWindow):
         self.提醒.setText(("⚠ " + 提醒) if 提醒 else "")
 
     def 当前清单(self):
-        return [[self.列表.item(i).text(), self.列表.item(i).checkState() == Qt.Checked]
+        return [[self.列表.item(i).data(Qt.UserRole), self.列表.item(i).checkState() == Qt.Checked]
                 for i in range(self.列表.count())]
 
     def 保存模块(self):
@@ -517,14 +541,17 @@ class 主窗口(QMainWindow):
         if 项 is None:
             QMessageBox.information(self, "模块设置", "请先在左边点选一个模块。")
             return
-        模块设置窗口(self, 项.text()).exec()
+        行 = self.列表.row(项)
+        if 模块设置窗口(self, 项.data(Qt.UserRole)).exec() == QDialog.Accepted:
+            self.刷新模块()                    # 名字可能改了
+            self.列表.setCurrentRow(行)
 
     # ---------- 运行 ----------
     def 运行全部(self):
         self.开始运行([名 for 名, 开 in self.当前清单() if 开])
 
     def 运行选中(self):
-        选中 = {项.text() for 项 in self.列表.selectedItems()}
+        选中 = {项.data(Qt.UserRole) for 项 in self.列表.selectedItems()}
         self.开始运行([名 for 名, _ in self.当前清单() if 名 in 选中])
 
     def _设可用(self, 可用):
@@ -550,7 +577,7 @@ class 主窗口(QMainWindow):
         self.进度条.setMaximum(len(名列表))
         self.进度条.setValue(0)
         self.进度文字.setText("正在打开浏览器 ……")
-        self.过程.appendPlainText(f"{datetime.now():%H:%M:%S} 开始：{' → '.join(名列表)}")
+        self.过程.appendPlainText(f"{datetime.now():%H:%M:%S} 开始：{' → '.join(map(显示名, 名列表))}")
         运行记录.观察者 = lambda 模块名, 文字: self.传话.步骤.emit(模块名, 文字)
         self._本次发送 = self.自动发.isChecked() and not 测试不发送   # 在窗口线程里读好，后台线程只用这个值
         threading.Thread(target=self._后台运行, args=(名列表,), daemon=True).start()
@@ -578,13 +605,13 @@ class 主窗口(QMainWindow):
             self.进度文字.setText(self.进度文字.text().split("｜")[0] + "｜" + 文字.rstrip(" …"))
 
     def _开始模块(self, 序号, 总数, 名):
-        self.进度文字.setText(f"正在运行 [{序号}/{总数}] {名}")
+        self.进度文字.setText(f"正在运行 [{序号}/{总数}] {显示名(名)}")
 
     def _模块完成(self, 名, 结果):
         self.进度条.setValue(self.进度条.value() + 1)
         好 = 结果["状态"] in ("成功", "无数据")
         数量 = f"，数量 {结果['数量']}" if 结果.get("数量") is not None else ""
-        self.过程.appendPlainText(f"{'✔' if 好 else '⚠'} {名}：{结果['状态']}{数量}")
+        self.过程.appendPlainText(f"{'✔' if 好 else '⚠'} {显示名(名)}：{结果['状态']}{数量}")
 
     def _全部完成(self, 总结):
         运行记录.观察者 = None
@@ -593,9 +620,9 @@ class 主窗口(QMainWindow):
         飞书们, 坏的 = [], []
         for 项 in 总结["消息们"]:
             状态, 说明 = 项["飞书"]
-            飞书们.append(f"{项['模块']} {状态}")
+            飞书们.append(f"{项['显示名']} {状态}")
             if 状态 in ("失败", "未知"):
-                坏的.append(f"{项['模块']}：{状态}，{说明}")
+                坏的.append(f"{项['显示名']}：{状态}，{说明}")
         self._显示结果(总结["消息们"])
         self.飞书状态.setText("飞书：" + "；".join(飞书们))
         self.本次日志 = 总结["日志文件夹"]
@@ -610,7 +637,7 @@ class 主窗口(QMainWindow):
         面板 = QWidget()
         层 = QVBoxLayout(面板)
         for 项 in 消息们:
-            标题 = QLabel(项.get("标题") or 项["模块"])
+            标题 = QLabel(项.get("标题") or 项["显示名"])
             标题.setStyleSheet("font-weight:bold; font-size:11pt; margin-top:6px")
             层.addWidget(标题)
             if 项.get("分组"):
@@ -685,7 +712,7 @@ class 主窗口(QMainWindow):
                 f.write(f"[{datetime.now():%H:%M:%S}] 窗口里手动发送飞书：{状态}（{遮掩(说明)}）\n")
         except Exception:
             pass
-        self.statusBar().showMessage(f"{项['模块']}：飞书 {状态}", 5000)
+        self.statusBar().showMessage(f"{项['显示名']}：飞书 {状态}", 5000)
         if 状态 != "成功":
             QMessageBox.warning(self, "飞书没发成功", f"{状态}：{说明}")
 
