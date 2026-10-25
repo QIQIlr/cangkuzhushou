@@ -6,8 +6,9 @@
 # 2026-10-24（小柒）：每个模块查完马上显示完整结果，不等后面的模块；你点过哪个模块，就不会被自动跳走。
 #   打开仓库助手时，这里显示上一次运行的结果（公共\上次结果.py），并标明是什么时候跑的。
 import os
+import time
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QSizePolicy,
                                QStackedWidget, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget)
@@ -156,6 +157,55 @@ class 运行页(QWidget):
         self.结果们 = {}
         self.已显示 = set()        # 已经显示完整结果的行号
         self.用户点过 = False      # 运行中点过左边的模块：之后不再自动跳
+        self._计时 = QTimer(self)
+        self._计时.setInterval(200)
+        self._计时.timeout.connect(self._走)
+        self._动画 = QPropertyAnimation(self.进度条, b"value", self)
+        self._动画.setDuration(220)
+        self._段, self._预计, self._当前, self._起 = [], [], None, 0.0
+    # ---------- 丝滑进度条（小柒 2026-10-25）----------
+    # 每个模块按它最近几次的用时分一段（运行总表里有记录；没有就按 30 秒），跑的时候在自己那段里慢慢往前走，
+    # 最多走到这段的 95%，真做完才补满；整个条只用一个每 0.2 秒一次的计时器，不碰后台运行。失败时停在原地。
+    def _准备进度(self, 名列表, 实时):
+        from 公共.界面 import 运行历史
+        self._计时.stop()
+        self._动画.stop()
+        self.进度条.setMaximum(1000)
+        self.进度条.setValue(0)
+        self._当前, self._起 = None, time.monotonic()
+        用时们 = {}
+        try:
+            for 行 in 运行历史.读全部(名列表):
+                if 行["原名"] in 名列表 and str(行["用时"]).isdigit() and 行["状态"] != "失败":
+                    用时们.setdefault(行["原名"], []).append(int(行["用时"]))
+        except Exception:
+            pass
+        self._预计 = [max(5.0, sum(用时们[名][:3]) / len(用时们[名][:3])) if 用时们.get(名) else 30.0 for 名 in 名列表]
+        总 = sum(self._预计) or 1
+        起 = 0.0
+        self._段 = []
+        for 秒 in self._预计:
+            长 = 1000 * 秒 / 总
+            self._段.append((起, 长))
+            起 += 长
+        if 实时:
+            self._计时.start()
+
+    def _走(self):
+        if self._当前 is None or self._当前 >= len(self._段):
+            return
+        起, 长 = self._段[self._当前]
+        比 = min(0.95, (time.monotonic() - self._起) / self._预计[self._当前])
+        self._走到(起 + 长 * 比)
+
+    def _走到(self, 值):
+        值 = int(min(1000, 值))
+        if 值 <= self.进度条.value():
+            return
+        self._动画.stop()
+        self._动画.setStartValue(self.进度条.value())
+        self._动画.setEndValue(值)
+        self._动画.start()
     def _去工作台钮(self):
         b = 按钮("去工作台", "主", 图="首页")
         b.clicked.connect(self.去工作台)
@@ -167,7 +217,7 @@ class 运行页(QWidget):
         self.过程钮.setText("运行过程 ˅" if 开 else "运行过程 ›")
 
     # ---------- 运行时窗口调用 ----------
-    def 开始(self, 名列表, 开始字):
+    def 开始(self, 名列表, 开始字, 实时=True):
         self.页们.setCurrentIndex(1)
         self.名们 = list(名列表)
         self.结果们 = {}
@@ -176,8 +226,7 @@ class 运行页(QWidget):
         self.本次日志 = None
         self.日志钮.setVisible(False)
         self.过程.clear()
-        self.进度条.setMaximum(len(名列表))
-        self.进度条.setValue(0)
+        self._准备进度(名列表, 实时)
         self.进度文字.setText("正在打开浏览器 ……")
         self.步骤文字.setText("")
         self.计数.setText(f"0 / {len(名列表)}")
@@ -209,6 +258,7 @@ class 运行页(QWidget):
         self.步骤文字.setText("")
         self.计数.setText(f"{序号} / {总数}")
         i = 序号 - 1
+        self._当前, self._起 = i, time.monotonic()
         if 0 <= i < self.列表.count():
             self.列表.item(i).setData(状态角, "运行中")
             self._换详情(i, 空白提示("同步", f"正在运行 {显示名(名)}", "当前步骤显示在上面的进度里。"))
@@ -216,10 +266,12 @@ class 运行页(QWidget):
                 self.列表.setCurrentRow(i)
 
     def 模块完成(self, 名, 结果):
-        self.进度条.setValue(self.进度条.value() + 1)
         for i in range(self.列表.count()):
             项 = self.列表.item(i)
             if 项.data(Qt.UserRole) == 名 and 项.data(状态角) in ("运行中", "等待"):
+                if i < len(self._段):                   # 这个模块真正做完：补满它那一段
+                    self._走到(sum(self._段[i]))
+                self._当前 = None
                 项.setData(状态角, 结果["状态"])
                 项.setData(数字角, 结果.get("数量") if 结果["状态"] != "失败" else None)
                 self._换详情(i, 空白提示("勾" if 结果["状态"] in ("成功", "无数据", "未运行") else "警告",
@@ -236,7 +288,8 @@ class 运行页(QWidget):
     def 全部完成(self, 消息们, 日志文件夹, 有问题数):
         self.本次日志 = 日志文件夹
         self.日志钮.setVisible(bool(日志文件夹))
-        self.进度条.setValue(self.进度条.maximum())
+        self._计时.stop()
+        self._走到(1000)
         self.计数.setText(f"{len(消息们)} / {len(self.名们)}")
         self.步骤文字.setText("")
         if 有问题数:
@@ -270,11 +323,11 @@ class 运行页(QWidget):
         """打开仓库助手时：显示上一次运行的结果（公共\上次结果.py 存的），标明是什么时候跑的。"""
         结果们 = 数据["结果们"]
         名们 = 数据.get("模块们") or [项["模块"] for 项 in 结果们]
-        self.开始(名们, f"这是 {数据['开始']:%m/%d %H:%M} 那次运行的结果（打开仓库助手时自动显示）。")
+        self.开始(名们, f"这是 {数据['开始']:%m/%d %H:%M} 那次运行的结果（打开仓库助手时自动显示）。", 实时=False)
         self.显示结果(结果们)
         没跑 = len(名们) - len(结果们)
         有问题 = sum(1 for 项 in 结果们 if 项["状态"] not in ("成功", "无数据", "未运行"))
-        self.进度条.setValue(len(结果们))
+        self.进度条.setValue(int(1000 * len(结果们) / max(1, len(名们))))
         self.计数.setText(f"{len(结果们)} / {len(名们)}")
         self.眉.setText(f"上一次运行 · {数据['开始']:%m/%d %H:%M} 开始 · " + " → ".join(map(显示名, 名们)))
         self.进度文字.setText(f"上一次运行的结果（{数据['开始']:%m/%d %H:%M}）"
@@ -292,6 +345,7 @@ class 运行页(QWidget):
         self.详情.setCurrentIndex(先看)
 
     def 出错(self):
+        self._计时.stop()                               # 停在当时的位置，不假装走完
         self.进度文字.setText("运行时出现意外错误")
         self.步骤文字.setText("详情已保存到 日志\\窗口错误.txt，请告诉 Claude。")
         self._进度图("错", "坏")
