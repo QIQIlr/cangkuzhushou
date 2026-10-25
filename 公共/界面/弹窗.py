@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QG
 
 from 公共 import 模块参数, 模块设置, 飞书
 from 公共.界面 import 提示
+from 公共.界面.提示 import 窗内弹窗, 胶囊钮
 from 公共.界面.主题 import 字号, 色
 from 公共.界面.组件 import 分组块, 分隔线, 勾选行, 卡片, 开关, 按钮, 标签, 空白提示, 行
 
@@ -51,17 +52,15 @@ class _勾在右边(QStyledItemDelegate):
         p.restore()
 
 
-class 任务选择窗口(QDialog):
+class 任务选择窗口(窗内弹窗):
     """转寄退货任务运行中弹出：按飞书顺序列出全部标题，点一行勾选（不分组、不排序、默认不勾，小柒 2026-10-24 确认）。
     规范“弹窗”：标题加粗居中；里面用分组列表，选中的行末尾蓝色 ✓；底部 取消（蓝字）、开始读取（蓝色加粗）。"""
 
     def __init__(self, 父, 清单):
-        super().__init__(父)
+        super().__init__(父, 820)
         self.setWindowTitle("转寄退货任务：选择要读取的任务")
-        self.resize(900, 660)
-        层 = QVBoxLayout(self)
-        层.setContentsMargins(24, 20, 24, 16)
-        层.setSpacing(8)
+        self.卡.setMinimumHeight(560)
+        层 = self.卡层
         行们, 应有 = 清单["行们"], 清单.get("应有")
         头 = 标签(f"选择要读取的任务")
         头.setAlignment(Qt.AlignCenter)
@@ -92,17 +91,20 @@ class 任务选择窗口(QDialog):
         self.列表.itemClicked.connect(self._切换)
         层.addWidget(self.列表, 1)
         行 = QHBoxLayout()
-        self.开始 = 按钮("开始读取（已选 0 条）", "文字")
-        self.开始.setStyleSheet("font-weight:bold;")
+        行.setSpacing(10)
+        self.开始 = 胶囊钮("开始读取（已选 0 条）", "主")
         self.开始.setEnabled(False)
         self.开始.clicked.connect(self.accept)
-        取消 = 按钮("取消（这次不读）", "文字")
+        取消 = 胶囊钮("取消（这次不读）", "次")
         取消.clicked.connect(self.reject)
-        行.addStretch(1)
-        行.addWidget(取消)
-        行.addWidget(self.开始)
-        行.addStretch(1)
+        行.addWidget(取消, 1)
+        行.addWidget(self.开始, 1)
+        层.addSpacing(8)
         层.addLayout(行)
+
+    def 默认动作(self):
+        if self.开始.isEnabled():
+            self.accept()
 
     def _切换(self, 项):
         项.setCheckState(Qt.Unchecked if 项.checkState() == Qt.Checked else Qt.Checked)
@@ -115,16 +117,13 @@ class 任务选择窗口(QDialog):
                 if self.列表.item(i).checkState() == Qt.Checked]
 
 
-class 飞书设置窗口(QDialog):
+class 飞书设置窗口(窗内弹窗):
     """规范“弹窗”：标题加粗居中、说明居中；输入框放在分组列表的行里；底部 取消（蓝字）、测试并保存（蓝色加粗）。"""
 
     def __init__(self, 父):
-        super().__init__(父)
+        super().__init__(父, 560)
         self.setWindowTitle("设置飞书群机器人")
-        self.setMinimumWidth(560)
-        层 = QVBoxLayout(self)
-        层.setContentsMargins(24, 20, 24, 16)
-        层.setSpacing(8)
+        层 = self.卡层
         头 = 标签("飞书群机器人")
         头.setAlignment(Qt.AlignCenter)
         头.setStyleSheet(f"font-size:{字号['弹窗标题']}px; font-weight:bold;")
@@ -148,16 +147,17 @@ class 飞书设置窗口(QDialog):
         层.addWidget(组)
         层.addSpacing(8)
         钮行 = QHBoxLayout()
-        钮行.addStretch(1)
-        取消 = 按钮("取消", "文字")
+        钮行.setSpacing(10)
+        取消 = 胶囊钮("取消", "次")
         取消.clicked.connect(self.reject)
-        钮 = 按钮("测试并保存", "文字")
-        钮.setStyleSheet("font-weight:bold;")
+        钮 = 胶囊钮("测试并保存", "主")
         钮.clicked.connect(self.测试)
-        钮行.addWidget(取消)
-        钮行.addWidget(钮)
-        钮行.addStretch(1)
+        钮行.addWidget(取消, 1)
+        钮行.addWidget(钮, 1)
         层.addLayout(钮行)
+
+    def 默认动作(self):
+        self.测试()
     def 测试(self):
         网址 = self.网址.text().strip()
         if not 飞书.格式.match(网址):

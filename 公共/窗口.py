@@ -143,8 +143,11 @@ class 主窗口(QMainWindow):
         self.记录页 = 记录页(self.statusBar())
         self.设置页 = 设置页({"设置飞书": self.设置飞书, "登录WMS": self.登录WMS, "登录飞书": self.登录飞书,
                           "更新邮编": self.更新邮编, "打开日志": lambda: os.startfile(日志根),
-                          "刷新模块": self.刷新模块}, self.工作台.自动发, 测试不发送)
-        for 页 in (self.工作台, self.运行页, self.记录页, self.设置页):
+                          "刷新模块": self.刷新模块, "样板": lambda: self.去(4)}, self.工作台.自动发, 测试不发送)
+        from 公共.界面.样板页 import 样板页
+        self.样板页 = 样板页()
+        self.样板页.返回.connect(lambda: self.去(3))
+        for 页 in (self.工作台, self.运行页, self.记录页, self.设置页, self.样板页):
             self.页们.addWidget(页)
         总.addWidget(self.页们, 1)
         self.setCentralWidget(中心)
@@ -185,7 +188,7 @@ class 主窗口(QMainWindow):
             模块参数.保存界面设置("菜单收起", self.菜单收起)
 
     def 去(self, 序号):
-        self.导航钮[序号].setChecked(True)
+        self.导航钮[min(序号, 3)].setChecked(True)          # 第 5 页“界面样板”从设置进去，导航上亮着“设置”
         self.页们.setCurrentIndex(序号)
         self._导航图标()
         if 序号 == 1 and not self.菜单收起 and not self.菜单手动展开过:

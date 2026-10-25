@@ -21,6 +21,8 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
     "开关开": "#34C759", "开关关": "#E9E9EA",
     # 分栏视图中间一栏的底色（比页面底色浅一点，规范 v1.1 补）
     "清单底": "#F9F9FB",
+    # 悬浮滚动条（半透明灰，规范 v1.3）、窗口内弹窗后面压暗的那一层
+    "滚动条": "rgba(60, 60, 67, 0.36)", "滚动条悬停": "rgba(60, 60, 67, 0.55)", "遮罩": "rgba(0, 0, 0, 0.28)",
     # 状态（规范：成功绿、无数据灰、不完整橙、失败红；“底”是同色很淡的底；“字”是放在淡底上读得清的同色深一点）
     "好": "#34C759", "好底": "#EAF9EE", "好字": "#248A3D",
     "注意": "#FF9500", "注意底": "#FFF4E5", "注意线": "#FFD8A8", "注意字": "#C93400",
@@ -161,12 +163,17 @@ QPushButton:hover {{ background: {色['线深']}; }}
 QPushButton:pressed {{ background: {色['灰']}; }}
 QPushButton:disabled {{ color: {色['灰']}; background: {色['面2']}; }}
 QPushButton:focus {{ outline: none; }}
-QPushButton[kind="primary"] {{ background: {色['主']}; color: {色['白']}; border-radius: 18px; padding: 8px 20px; }}
+QPushButton[kind="primary"] {{ background: {色['主']}; color: {色['白']}; border-radius: 18px; padding: 8px 20px; font-weight: bold; }}
 QPushButton[kind="primary"]:hover {{ background: {色['主深']}; }}
 QPushButton[kind="primary"]:disabled {{ background: {色['主中']}; color: {色['白']}; }}
 QPushButton[kind="ghost"] {{ background: transparent; color: {色['主']}; padding: 4px 8px; }}
 QPushButton[kind="ghost"]:hover {{ background: {色['主浅']}; }}
 QPushButton[kind="ghost"]:disabled {{ color: {色['灰']}; background: transparent; }}
+QPushButton[kind="dangerpill"] {{ background: {色['次钮底']}; color: {色['坏']}; border-radius: 18px; padding: 8px 20px; }}
+QPushButton[kind="dangerpill"]:hover {{ background: {色['线深']}; }}
+QPushButton[kind="small"] {{ background: {色['次钮底']}; color: {色['主']}; border-radius: 14px; padding: 4px 14px;
+    min-height: 20px; min-width: 64px; font-size: {字号['说明'] + 1}px; }}
+QPushButton[kind="small"]:hover {{ background: {色['线深']}; }}
 QPushButton[kind="danger"] {{ background: transparent; color: {色['坏']}; padding: 4px 8px; }}
 QPushButton[kind="icon"] {{ background: transparent; border-radius: 14px; padding: 4px; min-width: 20px; color: {色['主']}; }}
 QPushButton[kind="icon"]:hover {{ background: {色['次钮底']}; }}
@@ -244,6 +251,8 @@ def 套用(应用):
     应用.setStyle("Fusion")
     应用.setFont(像素字("正文"))
     应用.setStyleSheet(样式表)
+    from 公共.界面 import 滚动条
+    滚动条.装上(应用)                 # 所有滚动区域换成悬浮细滚动条（不占宽度）
 
 
 def 圆点(p, x, y, r, 颜色值):

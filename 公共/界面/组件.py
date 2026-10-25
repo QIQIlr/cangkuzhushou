@@ -12,7 +12,7 @@ from 公共.界面.主题 import 像素字, 图标, 图码, 图标字体对象, 
 # 样式表只认英文的属性值，这里把中文叫法换过去
 _角色码 = {"眉": "eyebrow", "大标题": "title", "副标题": "subtitle", "小标题": "heading", "组名": "group", "说明": "hint",
         "面板标题": "paneltitle", "脚注": "foot"}
-_类型码 = {"主": "primary", "淡": "ghost", "文字": "ghost", "图标": "icon", "危险": "danger"}
+_类型码 = {"主": "primary", "淡": "ghost", "文字": "ghost", "图标": "icon", "危险": "danger", "小": "small", "危险胶囊": "dangerpill"}
 
 
 def 标签(文字="", 角色=None, 换行=False, 可选=False):
@@ -75,8 +75,10 @@ def 状态标签(状态, 文字=None, 小=False, 醒目=False):
     l = QLabel(f"<span style='font-size:{9 if 小 else 11}px'>●</span>&nbsp;{文字 or 默认字}")
     l.setTextFormat(Qt.RichText)
     字色 = 色.get(种 + "字", 色[种]) if 醒目 else 色[种]
-    l.setStyleSheet(f"color:{字色}; font-size:{字号['说明'] if 小 else 字号['正文'] - 1}px;"
-                    + (f"background:{色[种 + '底']}; border-radius:6px; padding:2px 8px;" if 醒目 else "background:transparent;"))
+    # 规范 v1.3“角标”：胶囊形（高 22、圆角 11）、同色淡底 + 同色字 + 圆点，全软件一个样子
+    l.setStyleSheet(f"color:{字色}; font-size:{字号['说明'] if (小 or 醒目) else 字号['正文'] - 1}px;"
+                    + (f"background:{色[种 + '底']}; border-radius:11px; padding:0 10px; min-height:22px; max-height:22px;"
+                       if 醒目 else "background:transparent;"))
     l.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
     return l
 
