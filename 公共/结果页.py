@@ -277,44 +277,21 @@ class 数量表格(QTableWidget):
         for c in range(len(列名)):
             self.setColumnWidth(c, self.columnWidth(c) + (16 if c == 0 else 22))
         self._自然列 = [self.columnWidth(c) for c in range(len(列名))]
-        if getattr(self, "_最大列", None) and len(self._最大列) == len(self._自然列):   # 切换合计 / 合箱 / 单箱时不跳
-            self._自然列 = [max(a, b) for a, b in zip(self._自然列, self._最大列)]
         self.自然宽 = sum(self._自然列) + 2 * self.frameWidth()       # 完整显示需要的最小宽度
         self.自然高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(len(行们))) + 2 * self.frameWidth()
-        self.拉到(getattr(self, "目标宽", 0), *getattr(self, "_统一", (0, 0)))
+        self.拉到(getattr(self, "目标宽", 0))
 
-    def 拉到(self, 目标宽, 日期宽=0, 合计宽=0):
-        """自动排版用（2026-10-25 第三轮）：一页里所有表一样宽。
-        日期列统一用 日期宽、合计列统一用 合计宽（靠右，各表对齐）；多出来的宽度平均分给中间各区的列。永远不比完整宽度窄。"""
+    def 拉到(self, 目标宽):
+        """自动排版用（2026-10-25 第三轮）：同一行的表一样宽。比完整宽度宽出来的部分平均分给各列；永远不比完整宽度窄。"""
         self.目标宽 = 目标宽
-        self._统一 = (日期宽, 合计宽)
         if not getattr(self, "_自然列", None):
             return
-        列们 = list(self._自然列)
-        n = len(列们)
-        列们[0] = max(列们[0], 日期宽)
-        有合计 = n > 2 and "合计" in (self.horizontalHeaderItem(n - 1).text() if self.horizontalHeaderItem(n - 1) else "")
-        if 有合计:
-            列们[-1] = max(列们[-1], 合计宽)
-        自然 = sum(列们) + 2 * self.frameWidth()
-        多 = max(0, 目标宽 - 自然)
-        中间 = list(range(1, n - 1)) if 有合计 and n > 2 else list(range(1, n)) or [0]
-        for i, c in enumerate(中间):
-            列们[c] += 多 // len(中间) + (多 % len(中间) if i == 0 else 0)
-        for c, w in enumerate(列们):
-            self.setColumnWidth(c, w)
-        self.setFixedSize(max(自然, 目标宽), self.自然高)
+        多 = max(0, 目标宽 - self.自然宽)
+        n = len(self._自然列)
+        for c, w in enumerate(self._自然列):
+            self.setColumnWidth(c, w + 多 // n + (多 % n if c == 0 else 0))
+        self.setFixedSize(max(self.自然宽, 目标宽), self.自然高)
 
-    def 统一前宽(self, 日期宽, 合计宽):
-        """按统一的日期列、合计列宽度算，这张表完整显示要多宽。"""
-        if not getattr(self, "_自然列", None):
-            return 0
-        列们 = list(self._自然列)
-        n = len(列们)
-        列们[0] = max(列们[0], 日期宽)
-        if n > 2 and self.horizontalHeaderItem(n - 1) and "合计" in self.horizontalHeaderItem(n - 1).text():
-            列们[-1] = max(列们[-1], 合计宽)
-        return sum(列们) + 2 * self.frameWidth()
     def keyPressEvent(self, 事件):
         if 事件.matches(QKeySequence.Copy):
             self.复制()
@@ -396,19 +373,13 @@ class 表块(QWidget):
                 self.段钮们.append(钮)
         层.addLayout(头)
         # 切到合箱 / 单箱后表的宽度、高度不跳：先把每种看法都填一遍，记下最大的，再回到第一种
-        宽们, 高们, 列们 = [], [], []
+        宽们, 高们 = [], []
         for _, 列, 行 in 视图们:
             self.格.填(列, 行, 表["起点"])
             宽们.append(self.格.自然宽)
             高们.append(self.格.自然高)
-            列们.append(list(self.格._自然列))
         self.格.填(视图们[0][1], 视图们[0][2], 表["起点"])
-        self.格._自然列 = self.格._最大列 = [max(c) for c in zip(*列们)]   # 每列取各种看法里最宽的，切换时不跳
         self.格.自然宽, self.格.自然高 = max(宽们), max(高们)
-        self.日期宽 = self.格._自然列[0]
-        n = len(self.格._自然列)
-        self.合计宽 = self.格._自然列[-1] if n > 2 else 0
-        self.统一 = (0, 0)
         self.格.拉到(0)
         self.卡 = _白块(self.格, 8)
         层.addWidget(self.卡, 0, Qt.AlignLeft | Qt.AlignTop)
@@ -417,13 +388,13 @@ class 表块(QWidget):
 
     def 最小宽(self):
         段宽 = sum(b.width() for b in self.段钮们) + 4 * len(self.段钮们) + 4 if self.段钮们 else 0
-        return max(self.格.统一前宽(*self.统一) + 16, self.名宽 + 12 + 段宽)
+        return max(self.格.自然宽 + 16, self.名宽 + 12 + 段宽)
 
     def 自然高(self):
         return self.头高 + 6 + self.格.自然高 + 16
 
     def 定大小(self, 宽, 高):
-        self.格.拉到(宽 - 16, *self.统一)
+        self.格.拉到(宽 - 16)
         self.卡.setFixedSize(宽, 高 - self.头高 - 6)
         self.setFixedSize(宽, 高)
 
@@ -445,18 +416,14 @@ class 表格排列(QWidget):
             宽 = max(b.sizeHint().width() for b in 钮们)
             for b in 钮们:
                 b.setFixedWidth(宽)
-        日期宽 = max(块.日期宽 for 块 in 块们)
-        合计宽 = max(块.合计宽 for 块 in 块们)
-        for 块 in 块们:                    # 一页里所有表的日期列一样宽、合计列一样宽（小柒 2026-10-25 补充）
-            块.统一 = (日期宽, 合计宽)
         self._上次宽 = None
         self._排(900)
 
     def _每行几张(self, 总宽):
-        统一宽 = max(b.最小宽() for b in self.块们)          # 一页里所有白框一样宽
         n = len(self.块们)
         for k in range(n, 0, -1):
-            if k * 统一宽 + self.间距 * (k - 1) <= 总宽:
+            行们 = [self.块们[i:i + k] for i in range(0, n, k)]
+            if all(k * max(b.最小宽() for b in 行) + self.间距 * (k - 1) <= 总宽 for 行 in 行们):
                 return k
         return 1
 
@@ -468,7 +435,7 @@ class 表格排列(QWidget):
         y = 0
         for i in range(0, len(self.块们), k):
             行 = self.块们[i:i + k]
-            最宽 = max(b.最小宽() for b in self.块们)            # 全页统一，上下排时右边也对齐
+            最宽 = max(b.最小宽() for b in 行)
             # 一行几张平分这一行的宽度，但最多拉宽到完整宽度的 1.5 倍（不然全屏时一张表会被拉得很稀）
             宽 = max(最宽, min((总宽 - self.间距 * (k - 1)) // k, int(最宽 * 1.5)))
             高 = max(b.自然高() for b in self.块们[i:i + k])
