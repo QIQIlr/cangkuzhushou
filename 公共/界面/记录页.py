@@ -19,20 +19,20 @@ class 记录页(QWidget):
         self.setObjectName("页面")
         self.状态栏 = 状态栏
         总 = QVBoxLayout(self)
-        总.setContentsMargins(28, 22, 28, 22)
-        总.setSpacing(14)
-        self.头 = 页眉("运行记录", "每次运行的结果", "来自 日志\\运行总表.csv。双击一行打开那次的日志。日志保留 90 天。")
-        刷 = 按钮("刷新", 图="刷新")
+        总.setContentsMargins(24, 20, 24, 20)
+        总.setSpacing(16)
+        self.头 = 页眉("", "运行记录", "来自 日志\\运行总表.csv。双击一行打开那次的日志。日志保留 90 天。")
+        刷 = 按钮("刷新", "文字")
         刷.clicked.connect(self.刷新)
-        夹 = 按钮("打开日志文件夹", 图="文件夹")
+        夹 = 按钮("打开日志文件夹")
         夹.clicked.connect(lambda: os.startfile(日志根))
         self.头.右.addWidget(刷)
         self.头.右.addWidget(夹)
         总.addWidget(self.头)
-        卡 = 卡片(14, 10)
-        self.筛选行 = QHBoxLayout()
+        self.筛选行 = QHBoxLayout()            # 分段控件放在白色块上面（iOS 的样子）
         self.筛选行.addStretch(1)
-        卡.层.addLayout(self.筛选行)
+        总.addLayout(self.筛选行)
+        卡 = 卡片(8, 0)
         self.表 = QTableWidget()
         self.表.setColumnCount(6)
         self.表.setHorizontalHeaderLabels(["时间", "模块", "状态", "数量", "用时", "问题"])
@@ -51,6 +51,7 @@ class 记录页(QWidget):
         self.表.cellDoubleClicked.connect(self._打开)
         卡.层.addWidget(self.表, 1)
         self.空字 = 标签("还没有运行记录。", "说明")
+        self.空字.setAlignment(Qt.AlignCenter)
         卡.层.addWidget(self.空字)
         总.addWidget(卡, 1)
         self.筛选 = None
@@ -97,8 +98,7 @@ class 记录页(QWidget):
                 if c == 2:
                     种 = 状态样子.get(文, (文, "次"))[1]
                     格.setText(f"●  {文}")
-                    格.setForeground(颜色(色[种]))
-                    格.setFont(字(9.5, True))
+                    格.setForeground(颜色(色.get(种 + "字", 色[种])))
                 elif c == 5:
                     格.setForeground(颜色(色["坏字"] if 文 else 色["弱字"]))
                     格.setToolTip(文)

@@ -2,36 +2,17 @@
 #   “跑完自动发飞书”总开关只在工作台右上角（小柒 2026-10-24：不要两处都有），这里只用一句话说明现在是什么情况。
 #   文字要求：平常的话，第一次用的人也看得懂（小柒 2026-10-24）。
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
 from 公共 import 飞书
-from 公共.界面.主题 import 色
-from 公共.界面.组件 import 卡片, 图标字, 按钮, 标签, 页眉
+from 公共.界面.组件 import 分组块, 按钮, 页眉, 行
 
 
 def _一行(图, 标题, 说明, 右边们):
-    w = QWidget()
-    层 = QHBoxLayout(w)
-    层.setContentsMargins(0, 4, 0, 4)
-    层.setSpacing(14)
-    圈 = 图标字(图, 色["主"], 15)
-    圈.setFixedSize(36, 36)
-    圈.setStyleSheet(f"color:{色['主']}; background:{色['主浅']}; border-radius:18px;")
-    层.addWidget(圈, 0, Qt.AlignTop)
-    字层 = QVBoxLayout()
-    字层.setSpacing(2)
-    t = 标签(标题)
-    t.setStyleSheet("font-weight:bold; font-size:10.5pt;")
-    字层.addWidget(t)
-    s = 标签(说明, "说明", 换行=True)
-    s.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)   # 不然换行的说明会被压成一行、和标题重叠
-    字层.addWidget(s)
-    层.addLayout(字层, 1)
-    for x in 右边们:
-        层.addWidget(x, 0, Qt.AlignVCenter)
-    w.说明字 = s
+    """iOS 设置的一行：左边标题 + 灰色说明，右边文字按钮。（图 参数留着不用：规范不在设置行前放彩色图标）"""
+    w = 行(标题, list(右边们), 说明 or " ")
+    w.主字.setStyleSheet("font-size:15px;")
     return w
-
 
 class 设置页(QWidget):
     def __init__(self, 动作, 自动发开关, 测试不发送=False):
@@ -48,19 +29,18 @@ class 设置页(QWidget):
         内 = QWidget()
         内.setObjectName("页面")
         总 = QVBoxLayout(内)
-        总.setContentsMargins(28, 22, 28, 22)
-        总.setSpacing(14)
-        总.addWidget(页眉("设置", "设置", "一般设置一次就不用再管。"))
+        总.setContentsMargins(24, 20, 24, 20)
+        总.setSpacing(20)
+        总.addWidget(页眉("", "设置", "一般设置一次就不用再管。"))
 
         def 组(名, 行们):
-            卡 = 卡片(16, 6)
-            卡.层.addWidget(标签(名, "组名"))
-            for 行 in 行们:
-                卡.层.addWidget(行)
-            卡.setMaximumWidth(880)
-            总.addWidget(卡)
+            g = 分组块(名)
+            for x in 行们:
+                g.加行(x)
+            g.setMaximumWidth(880)
+            总.addWidget(g)
 
-        def 钮(文字, 键, 类型=None):
+        def 钮(文字, 键, 类型="文字"):
             b = 按钮(文字, 类型)
             b.clicked.connect(lambda: 动作[键]())
             return b
