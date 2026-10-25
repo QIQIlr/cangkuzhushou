@@ -9,7 +9,7 @@ import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QSizePolicy,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QSizePolicy,
                                QStackedWidget, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from 公共 import 结果页
@@ -30,16 +30,16 @@ class 运行项画法(QStyledItemDelegate):
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
         r = QRectF(选项.rect)
-        外框 = QPainterPath()
-        外框.addRoundedRect(QRectF(self.parent().viewport().rect()), 12, 12)
-        p.setClipPath(外框)
         选中 = bool(选项.state & QStyle.State_Selected)
         状态 = 索引.data(状态角) or "等待"
         _, 种, _ = 状态样子.get(状态, (状态, "次", "圆"))
         if 索引.data(要看角) and 状态 == "成功":
             种 = "注意"
-        if 选中:
-            p.fillRect(r, QColor(色["选中"]))
+        if 选中:                                  # 选中那行整行蓝底白字（和导航一样）
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(色["主"]))
+            p.drawRoundedRect(r.adjusted(0, 2, 0, -2), 10, 10)
+        字色 = 色["白"] if 选中 else 色["字"]
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(色[种]))
         p.drawEllipse(QPointF(r.left() + 20, r.top() + 21), 4, 4)
@@ -52,18 +52,15 @@ class 运行项画法(QStyledItemDelegate):
         p.drawText(QRectF(左, r.top() + 9, 文宽, 24), Qt.AlignLeft | Qt.AlignVCenter,
                    QFontMetrics(p.font()).elidedText(索引.data(Qt.DisplayRole) or "", Qt.ElideRight, 文宽))
         p.setFont(像素字("说明"))
-        p.setPen(QColor(色.get(种 + "字", 色[种])))
+        p.setPen(QColor(色["白"] if 选中 else 色.get(种 + "字", 色[种])))
         说 = 状态样子.get(状态, (状态,))[0]
         if 索引.data(要看角) and 状态 == "成功":
             说 = f"成功 · {索引.data(要看角)} 条要看"
         p.drawText(QRectF(左, r.top() + 33, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter, 说)
         if 右宽:
             p.setFont(像素字(17, 半粗=True))
-            p.setPen(QColor(色["字"]))
+            p.setPen(QColor(字色))
             p.drawText(QRectF(r.right() - 右宽 - 16, r.top(), 右宽, r.height()), Qt.AlignRight | Qt.AlignVCenter, str(数))
-        if 索引.row() < 索引.model().rowCount() - 1:
-            p.setPen(QPen(QColor(色["线"]), 1))
-            p.drawLine(QPointF(左, r.bottom()), QPointF(r.right(), r.bottom()))
         p.restore()
 
 class 运行页(QWidget):
@@ -75,98 +72,99 @@ class 运行页(QWidget):
         self.状态栏, self.手动发送 = 状态栏, 手动发送
         self.本次日志 = None
         总 = QVBoxLayout(self)
-        总.setContentsMargins(24, 18, 24, 18)
-        总.setSpacing(12)
+        总.setContentsMargins(0, 0, 0, 0)
+        总.setSpacing(0)
+        # 顶部一行运行状态条（小柒 2026-10-25：运行过程不重要，运行中也只占一行）：● 状态 + 细进度条 + 当前步骤 + 运行过程 ›
+        顶 = QFrame()
+        顶.setObjectName("顶条")
+        顶层 = QHBoxLayout(顶)
+        顶层.setContentsMargins(20, 8, 12, 8)
+        顶层.setSpacing(12)
+        self.进度图 = 标签("●")              # 规范：状态只用 ● 圆点
+        顶层.addWidget(self.进度图)
+        self.进度文字 = 标签("还没有运行。")
+        self.进度文字.setStyleSheet(f"font-size:{字号['正文']}px;")
+        顶层.addWidget(self.进度文字)
+        self.进度条 = QProgressBar()
+        self.进度条.setTextVisible(False)
+        self.进度条.setFixedWidth(180)
+        顶层.addWidget(self.进度条)
+        self.步骤文字 = 标签("", "说明")
+        self.步骤文字.setMinimumWidth(40)
+        self.步骤文字.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        顶层.addWidget(self.步骤文字, 1)
+        self.计数 = 标签("", "说明")
+        顶层.addWidget(self.计数)
         self.日志钮 = 按钮("打开这次的日志", "文字")
         self.日志钮.clicked.connect(lambda: self.本次日志 and os.startfile(self.本次日志))
         self.日志钮.setVisible(False)
+        顶层.addWidget(self.日志钮)
+        self.过程钮 = 按钮("运行过程 ›", "文字")
+        self.过程钮.clicked.connect(self._展开过程)
+        顶层.addWidget(self.过程钮)
+        总.addWidget(顶)
+        self.顶条 = 顶
+        self.过程框 = QWidget()
+        过层 = QVBoxLayout(self.过程框)
+        过层.setContentsMargins(20, 8, 20, 8)
+        self.过程 = QPlainTextEdit()
+        self.过程.setReadOnly(True)
+        self.过程.setMaximumBlockCount(2000)
+        self.过程.setFixedHeight(150)
+        过层.addWidget(self.过程)
+        self.过程框.setVisible(False)
+        总.addWidget(self.过程框)
 
         self.页们 = QStackedWidget()
         空页 = QWidget()
         空层 = QVBoxLayout(空页)
-        空层.setContentsMargins(4, 4, 4, 4)
-        空层.addWidget(页眉("运行结果", "这次运行"))
+        空层.setContentsMargins(24, 20, 24, 20)
+        空层.addWidget(页眉("", "运行结果"))
         空层.addWidget(空白提示("运行", "这次打开后还没有运行",
                            "到工作台打开要跑的模块，点“运行已启用模块”。运行时会自动切到这一页。",
                            [self._去工作台钮()]), 1)
         self.页们.addWidget(空页)
 
+        # 分栏视图（苹果“邮件”式）：中间模块清单，右边详情占满剩下的地方
         工作区 = QWidget()
-        工层 = QVBoxLayout(工作区)
+        工层 = QHBoxLayout(工作区)
         工层.setContentsMargins(0, 0, 0, 0)
-        工层.setSpacing(12)
-        # 进度卡（兼当页眉）：图标、这次的情况、跑到哪一步；右边计数、运行过程、打开日志
-        进度卡 = 卡片(16, 8)
-        行 = QHBoxLayout()
-        行.setSpacing(12)
-        self.进度图 = 标签("●")              # 规范：状态只用 ● 圆点
-        self.进度图.setFixedWidth(14)
-        行.addWidget(self.进度图, 0, Qt.AlignTop)
-        字层 = QVBoxLayout()
-        字层.setSpacing(1)
-        self.眉 = 标签("运行结果", "眉")
-        self.进度文字 = 标签("还没有运行。", "小标题")
-        self.进度文字.setStyleSheet(f"font-size:{字号['标题']}px; font-weight:bold;")
-        self.步骤文字 = 标签("", "说明")
-        字层.addWidget(self.眉)
-        字层.addWidget(self.进度文字)
-        字层.addWidget(self.步骤文字)
-        行.addLayout(字层, 1)
-        self.计数 = 标签("", "说明")
-        行.addWidget(self.计数)
-        self.过程钮 = 按钮("运行过程", "文字", 图="右")
-        self.过程钮.clicked.connect(self._展开过程)
-        行.addWidget(self.过程钮)
-        行.addWidget(self.日志钮)
-        进度卡.层.addLayout(行)
-        self.进度条 = QProgressBar()
-        self.进度条.setTextVisible(False)
-        进度卡.层.addWidget(self.进度条)
-        self.过程 = QPlainTextEdit()
-        self.过程.setReadOnly(True)
-        self.过程.setMaximumBlockCount(2000)
-        self.过程.setFixedHeight(140)
-        self.过程.setVisible(False)
-        进度卡.层.addWidget(self.过程)
-        工层.addWidget(进度卡)
-        # 列表 + 详情
-        中 = QHBoxLayout()
-        中.setSpacing(12)
+        工层.setSpacing(0)
+        中栏 = QFrame()
+        中栏.setObjectName("清单栏")
+        中栏.setFixedWidth(250)
+        中层 = QVBoxLayout(中栏)
+        中层.setContentsMargins(8, 16, 8, 8)
+        中层.setSpacing(8)
+        self.眉 = 标签("运行结果", "说明")
+        self.眉.setWordWrap(True)
+        self.眉.setContentsMargins(12, 0, 8, 0)
+        中层.addWidget(self.眉)
         self.列表 = QListWidget()
-        self.列表.setFixedWidth(224)
+        self.列表.setObjectName("模块清单")
         self.列表.setItemDelegate(运行项画法(self.列表))
-        self.列表.setStyleSheet("QListWidget::item, QListWidget::item:selected, QListWidget::item:hover { background: transparent; }")
-        self.列表.setSizePolicy(self.列表.sizePolicy().horizontalPolicy(), QSizePolicy.Maximum)
         self.列表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.列表.currentRowChanged.connect(self._换页)
         self.列表.itemClicked.connect(lambda _: setattr(self, "用户点过", True))
-        左列 = QVBoxLayout()
-        左列.setSpacing(0)
-        左列.addWidget(self.列表)
-        左列.addStretch(1)
-        中.addLayout(左列)
-        self.详情卡 = 卡片(0, 0)
+        中层.addWidget(self.列表, 1)
+        工层.addWidget(中栏)
         self.详情 = QStackedWidget()
-        self.详情卡.层.addWidget(self.详情)
-        中.addWidget(self.详情卡, 1)
-        工层.addLayout(中, 1)
+        工层.addWidget(self.详情, 1)
         self.页们.addWidget(工作区)
         总.addWidget(self.页们, 1)
         self.名们 = []
         self.结果们 = {}
         self.已显示 = set()        # 已经显示完整结果的行号
         self.用户点过 = False      # 运行中点过左边的模块：之后不再自动跳
-
     def _去工作台钮(self):
         b = 按钮("去工作台", "主", 图="首页")
         b.clicked.connect(self.去工作台)
         return b
 
     def _展开过程(self):
-        开 = not self.过程.isVisible()
-        self.过程.setVisible(开)
-        from 公共.界面.主题 import 图标
-        self.过程钮.setIcon(图标("展开" if 开 else "右", 色["主"]))
+        开 = not self.过程框.isVisible()
+        self.过程框.setVisible(开)
+        self.过程钮.setText("运行过程 ˅" if 开 else "运行过程 ›")
 
     # ---------- 运行时窗口调用 ----------
     def 开始(self, 名列表, 开始字):
@@ -317,8 +315,8 @@ class 运行页(QWidget):
 
     def _进度图(self, 图, 种):
         """进度卡左上角的状态圆点：蓝 = 正在运行、绿 = 全部正常、橙 = 有要看的、红 = 出错、灰 = 以前的结果。"""
-        self.进度图.setStyleSheet(f"color:{色[种]}; font-size:{字号['行标题']}px; padding-top:22px;")
+        self.进度图.setStyleSheet(f"color:{色[种]}; font-size:{字号['说明']}px;")
 
     def _列表高度(self):
-        需要 = max(1, self.列表.count()) * 60 + 2 * self.列表.frameWidth() + 4
-        self.列表.setFixedHeight(min(需要, max(60 * 3, self.height() - 260)))   # 白色块只包住这几行
+        pass                          # 分栏版面里清单占满中间一栏，不用再算高度
+

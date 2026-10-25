@@ -19,6 +19,8 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
     "主": "#007AFF", "主深": "#0062CC", "主浅": "#E8F1FF", "主中": "#99C7FF", "次钮底": "#E5E5EA",
     # 开关
     "开关开": "#34C759", "开关关": "#E9E9EA",
+    # 分栏视图中间一栏的底色（比页面底色浅一点，规范 v1.1 补）
+    "清单底": "#F9F9FB",
     # 状态（规范：成功绿、无数据灰、不完整橙、失败红；“底”是同色很淡的底；“字”是放在淡底上读得清的同色深一点）
     "好": "#34C759", "好底": "#EAF9EE", "好字": "#248A3D",
     "注意": "#FF9500", "注意底": "#FFF4E5", "注意线": "#FFD8A8", "注意字": "#C93400",
@@ -129,6 +131,11 @@ QPushButton[nav="1"]:hover {{ background: {色['次钮底']}; }}
 QPushButton[nav="1"]:checked {{ background: {色['主']}; color: {色['白']}; }}
 QPushButton[nav="1"][narrow="1"] {{ text-align: center; padding: 8px 0; }}
 QWidget#页面 {{ background: {色['底']}; }}
+/* 运行结果页：顶部一行状态条、中间模块清单栏（分栏视图） */
+QFrame#顶条 {{ background: {色['面']}; border: none; border-bottom: 1px solid {色['线']}; }}
+QFrame#清单栏 {{ background: {色['清单底']}; border: none; border-right: 1px solid {色['线']}; }}
+QListWidget#模块清单 {{ background: transparent; border: none; }}
+QListWidget#模块清单::item, QListWidget#模块清单::item:selected, QListWidget#模块清单::item:hover {{ background: transparent; }}
 QLabel[role="eyebrow"] {{ color: {色['弱字']}; font-size: {字号['说明'] + 1}px; }}
 QLabel[role="title"] {{ font-size: {字号['大标题']}px; font-weight: bold; color: {色['字']}; }}
 QLabel[role="subtitle"] {{ color: {色['弱字']}; font-size: {字号['说明'] + 1}px; }}
@@ -222,8 +229,9 @@ QMessageBox QLabel {{ font-size: {字号['正文']}px; }}
 结果页样式表 = f"""
 QTableWidget#数量表 {{ background:{色['面']}; border:none; border-radius:0;
     selection-background-color:{色['选中']}; selection-color:{色['字']}; }}
-QTableWidget#数量表::item {{ border-bottom:1px solid {色['线']}; padding:0 8px; }}
-QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ background:{色['面']}; border:1px solid {色['线']}; border-radius:12px; }}
+QTableWidget#数量表::item {{ padding:0 8px; }}
+QListWidget#任务列表, QListWidget#区域列表 {{ background:{色['面']}; border:none; border-radius:12px; }}
+QListWidget#单号列表 {{ background:{色['面']}; border:none; border-radius:12px; padding:6px; }}
 QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid {色['线']}; }}
 QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
 QListWidget#单号列表::item {{ border-radius:6px; }}
