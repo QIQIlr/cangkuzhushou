@@ -97,8 +97,8 @@ class 页眉(QWidget):
         左.addWidget(self.眉)
         左.addWidget(self.标题)
         左.addWidget(self.副标题)
-        self.副标题.setVisible(bool(副标题))
         层.addLayout(左, 1)
+        self.副标题.setVisible(bool(副标题))      # 先放进窗口里再决定显不显示（不然会闪出 pythonw 小窗）
         self.右 = QHBoxLayout()
         self.右.setSpacing(12)
         层.addLayout(self.右)
@@ -232,13 +232,13 @@ class 分组块(QWidget):
         外.setContentsMargins(0, 0, 0, 0)
         外.setSpacing(6)
         self.标题 = 标签(标题, "组名")
-        self.标题.setVisible(bool(标题))
         外.addWidget(self.标题)
+        self.标题.setVisible(bool(标题))          # 先放进窗口里再决定显不显示（不然会闪出 pythonw 小窗）
         self.块 = 卡片(0, 0)
         外.addWidget(self.块)
         self.脚注 = 标签(脚注, "脚注", 换行=True)
-        self.脚注.setVisible(bool(脚注))
         外.addWidget(self.脚注)
+        self.脚注.setVisible(bool(脚注))
         self.行们 = []
 
     def 加行(self, 行):
@@ -279,9 +279,9 @@ def 行(主文字, 右边=None, 说明=""):
     w.主字 = 标签(主文字, 换行=True)
     字层.addWidget(w.主字)
     w.说明字 = 标签(说明, "说明", 换行=True)
-    w.说明字.setVisible(bool(说明))
     字层.addWidget(w.说明字)
     层.addLayout(字层, 1)
+    w.说明字.setVisible(bool(说明))             # 字层挂到 w 上以后再设，不然这行字会变成独立的小窗闪一下
     if 右边 is not None:
         for x in (右边 if isinstance(右边, (list, tuple)) else [右边]):
             层.addWidget(x, 0, Qt.AlignVCenter)
