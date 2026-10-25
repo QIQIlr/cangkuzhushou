@@ -110,7 +110,7 @@ class 模块卡片画法(QStyledItemDelegate):
         悬停 = bool(选项.state & QStyle.State_MouseOver)
         开 = _开着(索引)
         p.setPen(QPen(QColor(色["主"] if 选中 else (色["线深"] if 悬停 else 色["线"])), 1.5 if 选中 else 1))
-        p.setBrush(QColor("#F7F9FF" if 选中 else 色["面"]))
+        p.setBrush(QColor(色["选中卡底"] if 选中 else 色["面"]))
         p.drawRoundedRect(r, 10, 10)
         画图标(p, "拖", QPointF(r.left() + 17, r.center().y()), 13, 色["灰"])
         # 开关
@@ -120,7 +120,7 @@ class 模块卡片画法(QStyledItemDelegate):
         半 = 7 if 开 else 6
         x = 开关区.right() - 10 if 开 else 开关区.left() + 10
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#FFFFFF" if 开 else 色["弱字"]))
+        p.setBrush(QColor(色["白"] if 开 else 色["弱字"]))
         p.drawEllipse(QPointF(x, 开关区.center().y()), 半, 半)
         # 右边：上次结果
         右宽 = 150

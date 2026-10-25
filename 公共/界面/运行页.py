@@ -34,7 +34,7 @@ class 运行项画法(QStyledItemDelegate):
         if 索引.data(要看角) and 状态 == "成功":
             种, 图 = "注意", "警告"
         p.setPen(QPen(QColor(色["主"] if 选中 else 色["线"]), 1.5 if 选中 else 1))
-        p.setBrush(QColor("#F7F9FF" if 选中 else 色["面"]))
+        p.setBrush(QColor(色["选中卡底"] if 选中 else 色["面"]))
         p.drawRoundedRect(r, 10, 10)
         圆心 = QPointF(r.left() + 24, r.center().y())
         p.setPen(Qt.NoPen)

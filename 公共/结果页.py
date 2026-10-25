@@ -20,23 +20,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QF
 from 公共.界面 import 主题  # noqa: E402
 from 公共.界面.组件 import 状态标签  # noqa: E402
 
-# 颜色统一来自 公共\界面\主题.py（2026-10-24 整体重新设计）；这里只是起个结果页用惯的名字
-_主 = 主题.色
-色 = {"好": _主["好"], "好底": _主["好底"], "注意": _主["注意"], "注意底": _主["注意底"], "注意线": _主["注意线"],
-     "注意字": _主["注意字"], "坏": _主["坏"], "坏底": _主["坏底"], "坏线": _主["坏线"], "坏字": _主["坏字"],
-     "次": _主["次"], "次底": _主["次底"], "灰": _主["灰"], "说明": _主["弱字"],
-     "选中": _主["主浅"], "今天": _主["主浅"], "合计底": _主["面2"], "段": _主["底"], "线": _主["线"], "字": _主["字"]}
+# 颜色、状态写法、样式表全部来自 公共\界面\主题.py（全软件只有那一份），这里不写颜色值
+色 = 主题.色
 等宽 = 主题.等宽
-状态样子 = {"未运行": ("○ 没运行", "次"), "成功": ("✔ 成功", "好"), "无数据": ("○ 无数据", "次"), "不完整": ("⚠ 不完整", "注意"), "失败": ("✖ 失败", "坏")}
-样式表 = f"""
-QTableWidget#数量表 {{ gridline-color:{色['线']}; border:1px solid {色['线']}; border-radius:8px;
-    selection-background-color:{色['选中']}; selection-color:{色['字']}; }}
-QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ border:1px solid {色['线']}; border-radius:8px; }}
-QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid {色['线']}; }}
-QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
-QListWidget#单号列表::item {{ border-radius:6px; }}
-QListWidget#单号列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
-"""
+状态样子 = 主题.结果状态字
+样式表 = 主题.结果页样式表
+
 
 def _字(文字):
     return html.escape(str(文字)).replace("\n", "<br>")
@@ -483,7 +472,7 @@ class 面单页(QWidget):
             if 页["失败"]:
                 字 += f"<span style='color:{色['坏']}'>✖ 没读到</span>"
             else:
-                字 += f"<span style='font-family:{等宽}; color:#444'>{_字(页['单号']) or '&nbsp;'}</span>"
+                字 += f"<span style='font-family:{等宽}; color:{色['单号字']}'>{_字(页['单号']) or '&nbsp;'}</span>"
                 if 页["要看数"]:
                     字 += f"&nbsp;&nbsp;<span style='color:{色['注意']}'>⚠ {页['要看数']} 处要看</span>"
             牌 = QLabel(字)
@@ -535,7 +524,7 @@ class 面单页(QWidget):
             值 = _字(x["值"])
         样 = f"font-size:{'15pt' if x.get('大') else '10.5pt'};"
         样 += f"font-family:{等宽};" if x.get("等宽") else ""
-        样 += f"color:{色['灰'] if x.get('灰') else '#111111'};"
+        样 += f"color:{色['灰'] if x.get('灰') else 色['面单字']};"
         内容 = f"<span style='{样}'>{值}</span>"
         if x.get("注"):
             内容 += f"<span style='color:{色['说明']}; font-size:9.5pt'>　{_字(x['注'])}</span>"

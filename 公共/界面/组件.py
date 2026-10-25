@@ -27,7 +27,7 @@ def 按钮(文字="", 类型=None, 图=None, 图色=None, 提示=None):
     if 类型:
         b.setProperty("kind", _类型码.get(类型, 类型))
     if 图:
-        b.setIcon(图标(图, 图色 or ("#FFFFFF" if 类型 == "主" else 色["次字"]), 16))
+        b.setIcon(图标(图, 图色 or (色["白"] if 类型 == "主" else 色["次字"]), 16))
         b.setIconSize(QSize(16, 16))
     if 提示:
         b.setToolTip(提示)
@@ -131,7 +131,7 @@ class 开关(QAbstractButton):
         r = 7 if 开 else 6
         x = 轨.right() - 10 if 开 else 轨.left() + 10
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#FFFFFF" if 开 else 色["弱字"]))
+        p.setBrush(QColor(色["白"] if 开 else 色["弱字"]))
         p.drawEllipse(QRectF(x - r, 轨.center().y() - r, 2 * r, 2 * r))
         if self.text():
             p.setPen(QColor(色["字"] if 可用 else 色["灰"]))

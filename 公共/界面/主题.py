@@ -22,10 +22,18 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
     "坏": "#B91C1C", "坏底": "#FEE2E2", "坏线": "#FCA5A5", "坏字": "#7F1D1D",
     "次": "#4B5563", "次底": "#F3F4F6",
     "运行": "#2F5BEA", "运行底": "#EEF2FF",
+    # 零碎（以前散在各页面里的，2026-10-25 收回到这里）
+    "白": "#FFFFFF", "选中卡底": "#F7F9FF", "单号字": "#444444", "面单字": "#111111",
+    # 结果页用惯的名字（值和上面一样，只是起了个说法）
+    "说明": "#6B7280", "选中": "#EEF2FF", "今天": "#EEF2FF", "合计底": "#F9FAFB", "段": "#F3F4F6",
 }
 字体 = "Microsoft YaHei UI"
 等宽 = "Consolas"
 圆角 = 10
+
+# 结果页的状态写法（文字前带符号；颜色种类对应上面的 色）
+结果状态字 = {"未运行": ("○ 没运行", "次"), "成功": ("✔ 成功", "好"), "无数据": ("○ 无数据", "次"),
+           "不完整": ("⚠ 不完整", "注意"), "失败": ("✖ 失败", "坏")}
 
 # 状态 → (文字, 颜色种类, 图标)
 状态样子 = {"成功": ("成功", "好", "勾"), "无数据": ("无数据", "次", "圆"), "不完整": ("不完整", "注意", "警告"),
@@ -178,6 +186,18 @@ QStatusBar::item {{ border: none; }}
 QGroupBox {{ background: {色['面']}; border: 1px solid {色['线']}; border-radius: 8px; margin-top: 18px; padding: 12px 10px 10px 10px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 4px; top: 0px; color: {色['次字']}; font-weight: bold; }}
 QMessageBox QLabel {{ font-size: 10pt; }}
+"""
+
+
+# 结果页里几个表格、列表的样子（结果页.一页 用）
+结果页样式表 = f"""
+QTableWidget#数量表 {{ gridline-color:{色['线']}; border:1px solid {色['线']}; border-radius:8px;
+    selection-background-color:{色['选中']}; selection-color:{色['字']}; }}
+QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ border:1px solid {色['线']}; border-radius:8px; }}
+QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid {色['线']}; }}
+QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
+QListWidget#单号列表::item {{ border-radius:6px; }}
+QListWidget#单号列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
 """
 
 
