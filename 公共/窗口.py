@@ -21,10 +21,11 @@ sys.path.insert(0, str(根目录))
 
 from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QMainWindow,  # noqa: E402
-                               QMessageBox, QStackedWidget, QVBoxLayout, QWidget)
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from 公共 import 结果页, 飞书  # noqa: E402
 from 公共.界面 import 主题  # noqa: E402
+from 公共.界面 import 提示 as 提示框  # noqa: E402
 from 公共.界面.主题 import 图标, 色  # noqa: E402
 from 公共.界面.弹窗 import 任务选择窗口, 飞书设置窗口  # noqa: E402,F401  （测试脚本也从这里拿）
 from 公共.界面.组件 import 图标字, 按钮, 标签  # noqa: E402
@@ -191,10 +192,10 @@ class 主窗口(QMainWindow):
         if self.运行中:
             return
         if not 名列表:
-            QMessageBox.information(self, "没有模块", "没有要运行的模块。\n（运行已启用：请先打开模块的开关；只运行选中的：请先点选模块。）")
+            提示框.信息(self, "没有模块", "没有要运行的模块。\n（运行已启用：请先打开模块的开关；只运行选中的：请先点选模块。）")
             return
         if 专用窗口开着():
-            QMessageBox.warning(self, "请先关闭专用 Chrome", "“自动化专用 Chrome”窗口还开着（登录 WMS 时打开的那个）。\n请先关掉它，再点运行。")
+            提示框.警告(self, "请先关闭专用 Chrome", "“自动化专用 Chrome”窗口还开着（登录 WMS 时打开的那个）。\n请先关掉它，再点运行。")
             return
         self.运行中 = True
         self._本次 = {"开始": datetime.now(), "模块们": list(名列表), "结果们": []}
@@ -276,7 +277,7 @@ class 主窗口(QMainWindow):
                     "注意" if 有问题 else "好")
         self.工作台.刷新模块()          # 卡片上的“上次结果”、需要注意
         if 坏的:
-            QMessageBox.warning(self, "飞书没发成功", "\n".join(坏的))
+            提示框.警告(self, "飞书没发成功", "\n".join(坏的))
 
     def _显示结果(self, 消息们):
         """测试用：直接把一组结果显示在运行结果页。"""
@@ -288,13 +289,13 @@ class 主窗口(QMainWindow):
     def _手动发送(self, 项, 字, 钮):
         """把某个模块这次的结果发到飞书（运行时没发、或想再发一次时用）。发送情况记进这个模块的日志。"""
         if not 飞书.可以发送():
-            QMessageBox.information(self, "飞书", "还没设置好飞书，请先到“设置”里点“设置飞书”。")
+            提示框.信息(self, "飞书", "还没设置好飞书，请先到“设置”里点“设置飞书”。")
             return
         之前 = 项["飞书"][0]
         if 之前 in ("成功", "未知"):
             提示 = "这个结果已经发到飞书了，确定要再发一次吗？" if 之前 == "成功" else \
                 "上次发送结果“未知”（可能已经发出去了）。请先到飞书群里看一眼。\n确定要再发一次吗？"
-            if QMessageBox.question(self, "再发一次？", 提示, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            if not 提示框.询问(self, "再发一次？", 提示, 是="再发一次", 否="不发了"):
                 return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -314,7 +315,7 @@ class 主窗口(QMainWindow):
             pass
         self.statusBar().showMessage(f"{项['显示名']}：飞书 {状态}", 5000)
         if 状态 != "成功":
-            QMessageBox.warning(self, "飞书没发成功", f"{状态}：{说明}")
+            提示框.警告(self, "飞书没发成功", f"{状态}：{说明}")
 
     def _运行出错(self, 详情):
         运行记录.观察者 = None
@@ -324,7 +325,7 @@ class 主窗口(QMainWindow):
         self._存上次(完成=False)
         self.运行页.出错()
         self._运行标("上次运行出现意外错误", "坏")
-        QMessageBox.critical(self, "意外错误", "运行时出现意外错误。\n详情已保存到 日志\\窗口错误.txt，请把这件事告诉 Claude。")
+        提示框.出错(self, "意外错误", "运行时出现意外错误。\n详情已保存到 日志\\窗口错误.txt，请把这件事告诉 Claude。")
 
     # ---------- 掉线登录 ----------
     def _等登录(self, 次数):
@@ -335,15 +336,9 @@ class 主窗口(QMainWindow):
         return self.登录回答
 
     def _请登录(self, 次数):
-        框 = QMessageBox(self)
-        框.setWindowTitle("需要登录 WMS")
-        框.setIcon(QMessageBox.Warning)
-        框.setText(("还没有检测到登录成功，请再试一次。\n\n" if 次数 == 2 else "")
-                  + "WMS 已掉线。已经弹出一个 Chrome 窗口，请在里面登录 WMS。\n登录完成后点“我登录好了”。")
-        好了 = 框.addButton("我登录好了", QMessageBox.AcceptRole)
-        框.addButton("取消这次运行", QMessageBox.RejectRole)
-        框.exec()
-        self.登录回答 = 框.clickedButton() is 好了
+        文字 = (("还没有检测到登录成功，请再试一次。\n\n" if 次数 == 2 else "")
+                + "WMS 已掉线。已经弹出一个 Chrome 窗口，请在里面登录 WMS。\n登录完成后点“我登录好了”。")
+        self.登录回答 = 提示框.选择(self, "需要登录 WMS", 文字, [("取消这次运行", "取消"), ("我登录好了", "主")], 默认=1) == 1
         self.登录事件.set()
 
     # ---------- 运行中勾选（转寄退货任务） ----------
@@ -370,48 +365,47 @@ class 主窗口(QMainWindow):
 
     def 登录WMS(self):
         if self.运行中:
-            QMessageBox.information(self, "正在运行", "正在运行中，请等运行完再登录。")
+            提示框.信息(self, "正在运行", "正在运行中，请等运行完再登录。")
             return
         if 专用窗口开着():
-            QMessageBox.information(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
+            提示框.信息(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
             return
         subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
-        QMessageBox.information(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
+        提示框.信息(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
 
     def 更新邮编(self):
         from 公共 import 邮编
         日期 = 邮编.数据日期()
         问 = (f"现在的邮编数据是 {日期:%Y-%m-%d} 下载的。\n" if 日期 else "电脑上还没有邮编数据。\n") + \
             "要从日本邮政官网下载最新的邮编数据吗？（约 2 MB，需要联网，官方每月更新一次）"
-        if QMessageBox.question(self, "更新邮编数据", 问, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+        if not 提示框.询问(self, "更新邮编数据", 问, 是="下载", 否="不用了"):
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             好, 说明 = 邮编.更新数据()
         finally:
             QApplication.restoreOverrideCursor()
-        (QMessageBox.information if 好 else QMessageBox.warning)(self, "更新邮编数据", 说明)
+        提示框.信息(self, "更新邮编数据", 说明)
         self.设置页.刷新()
 
     def 登录飞书(self):
         if self.运行中:
-            QMessageBox.information(self, "正在运行", "正在运行中，请等运行完再登录。")
+            提示框.信息(self, "正在运行", "正在运行中，请等运行完再登录。")
             return
         if 专用窗口开着():
-            QMessageBox.information(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
+            提示框.信息(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
             return
         from 公共.飞书网页 import 任务列表网址
         subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", 任务列表网址])
-        QMessageBox.information(self, "登录飞书", "已打开自动化专用 Chrome，进入飞书“我负责的”任务页。\n"
+        提示框.信息(self, "登录飞书", "已打开自动化专用 Chrome，进入飞书“我负责的”任务页。\n"
                                 "如果出现登录页，请扫码或输入账号登录；看到任务列表就说明登录好了。\n"
                                 "然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
 
     # ---------- 关闭 ----------
     def closeEvent(self, 事件):
         if self.运行中:
-            答 = QMessageBox.question(self, "正在运行", "查询还在运行。现在关闭会中止这次运行，结果不会发到飞书。\n确定要关闭吗？",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if 答 != QMessageBox.Yes:
+            if not 提示框.询问(self, "正在运行", "查询还在运行。现在关闭会中止这次运行，结果不会发到飞书。\n确定要关闭吗？",
+                              是="关闭", 否="不关", 危险=True):
                 事件.ignore()
                 return
             _记下窗口错误("用户在运行中关闭了窗口，本次运行被中止。")
@@ -431,7 +425,7 @@ def _记下窗口错误(文字):
 def _意外(类型, 值, 追踪):
     _记下窗口错误("".join(traceback.format_exception(类型, 值, 追踪)))
     try:
-        QMessageBox.critical(None, "意外错误", f"仓库助手出现意外错误：{值}\n详情已保存到 日志\\窗口错误.txt，请告诉 Claude。")
+        提示框.出错(None, "意外错误", f"仓库助手出现意外错误：{值}\n详情已保存到 日志\\窗口错误.txt，请告诉 Claude。")
     except Exception:
         pass
 
@@ -443,7 +437,7 @@ def main():
     日志根.mkdir(exist_ok=True)
     锁 = QLockFile(str(日志根 / "仓库助手窗口.lock"))
     if not 锁.tryLock(100):
-        QMessageBox.information(None, "仓库助手", "仓库助手已经打开了（看看任务栏）。")
+        提示框.信息(None, "仓库助手", "仓库助手已经打开了（看看任务栏）。")
         return 0
     窗 = 主窗口()
     窗.show()

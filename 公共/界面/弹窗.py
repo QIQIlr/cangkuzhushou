@@ -4,37 +4,83 @@
 #   模块设置面板：工作台右边那块（就地改名、查询范围、跑完自动发飞书；改动即保存，小柒 2026-10-24）
 import importlib
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMessageBox, QScrollArea, QVBoxLayout, QWidget)
+                               QListWidget, QListWidgetItem, QScrollArea, QStyle, QStyledItemDelegate,
+                               QStyleOptionViewItem, QVBoxLayout, QWidget)
 
 from 公共 import 模块参数, 模块设置, 飞书
-from 公共.界面.主题 import 色
+from 公共.界面 import 提示
+from 公共.界面.主题 import 字号, 色
 from 公共.界面.组件 import 分组块, 分隔线, 勾选行, 卡片, 开关, 按钮, 标签, 空白提示, 行
 
 
+class _勾在右边(QStyledItemDelegate):
+    """规范“多选”：选中的行末尾显示蓝色 ✓，不用方框勾选框；长标题换行显示。"""
+
+    def _窄(self, 选项, 索引):
+        o = QStyleOptionViewItem(选项)
+        self.initStyleOption(o, 索引)
+        o.features &= ~QStyleOptionViewItem.HasCheckIndicator
+        o.rect = o.rect.adjusted(16, 0, -48, 0)
+        return o
+
+    def sizeHint(self, 选项, 索引):
+        o = self._窄(选项, 索引)
+        宽 = max(100, o.rect.width())
+        高 = o.fontMetrics.boundingRect(0, 0, 宽, 10000, Qt.TextWordWrap, o.text).height()
+        return QSize(选项.rect.width(), max(44, 高 + 20))
+
+    def paint(self, p, 选项, 索引):
+        o = self._窄(选项, 索引)
+        o.state &= ~QStyle.State_Selected
+        o.state &= ~QStyle.State_HasFocus
+        p.save()
+        p.setPen(QColor(色["字"]))
+        p.setFont(o.font)
+        p.drawText(o.rect, Qt.AlignVCenter | Qt.AlignLeft | Qt.TextWordWrap, o.text)
+        if 索引.row() < 索引.model().rowCount() - 1:
+            p.setPen(QColor(色["线"]))
+            p.drawLine(选项.rect.left() + 16, 选项.rect.bottom(), 选项.rect.right(), 选项.rect.bottom())
+        if Qt.CheckState(索引.data(Qt.CheckStateRole)) == Qt.Checked:
+            from 公共.界面.主题 import 图标字体对象, 图码
+            p.setPen(QColor(色["主"]))
+            p.setFont(图标字体对象(16))
+            p.drawText(QRectF(选项.rect.right() - 44, 选项.rect.top(), 28, 选项.rect.height()), Qt.AlignCenter, 图码["勾"])
+        p.restore()
+
+
 class 任务选择窗口(QDialog):
+    """转寄退货任务运行中弹出：按飞书顺序列出全部标题，点一行勾选（不分组、不排序、默认不勾，小柒 2026-10-24 确认）。
+    规范“弹窗”：标题加粗居中；里面用分组列表，选中的行末尾蓝色 ✓；底部 取消（蓝字）、开始读取（蓝色加粗）。"""
+
     def __init__(self, 父, 清单):
         super().__init__(父)
         self.setWindowTitle("转寄退货任务：选择要读取的任务")
-        self.resize(1000, 660)
+        self.resize(900, 660)
         层 = QVBoxLayout(self)
-        层.setContentsMargins(20, 18, 20, 16)
-        层.setSpacing(10)
+        层.setContentsMargins(24, 20, 24, 16)
+        层.setSpacing(8)
         行们, 应有 = 清单["行们"], 清单.get("应有")
-        层.addWidget(标签("飞书 · 我负责的", "眉"))
-        头 = 标签(f"共读到 {len(行们)} 条" + (f"，和页面显示的 {应有} 条一致" if 应有 == len(行们) else ""), "大标题")
+        头 = 标签(f"选择要读取的任务")
+        头.setAlignment(Qt.AlignCenter)
+        头.setStyleSheet(f"font-size:{字号['弹窗标题']}px; font-weight:bold;")
         层.addWidget(头)
+        副 = 标签(f"飞书“我负责的”共读到 {len(行们)} 条" + (f"，和页面显示的 {应有} 条一致" if 应有 == len(行们) else "")
+                 + "。按飞书里的顺序列出，点一行就选中或取消（可以选多条）。每条大约 6～11 秒。", "说明", 换行=True)
+        副.setAlignment(Qt.AlignCenter)
+        层.addWidget(副)
         for 句 in 清单.get("提醒", []):
             注 = 标签(句, 换行=True)
-            注.setStyleSheet(f"color:{色['注意字']}; background:{色['注意底']}; border:1px solid {色['注意线']};"
-                            "border-radius:8px; padding:6px 10px;")
+            注.setStyleSheet(f"color:{色['注意字']}; background:{色['注意底']}; border-radius:12px; padding:8px 16px;")
             层.addWidget(注)
-        层.addWidget(标签("按飞书里的顺序列出。点一行就勾选或取消（可以选多条），再点“开始读取”。每条大约 6～11 秒。", "说明"))
+        层.addSpacing(4)
         self.列表 = QListWidget()
         self.列表.setWordWrap(True)                       # 长标题换行显示，不截断
         self.列表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.列表.setStyleSheet(f"QListWidget::item {{ padding: 8px 6px; border-bottom: 1px solid {色['线']}; }}")
+        self.列表.setItemDelegate(_勾在右边(self.列表))
+        self.列表.setStyleSheet("QListWidget::item, QListWidget::item:selected, QListWidget::item:hover { background: transparent; }")
         位数 = len(str(len(行们)))
         for i, (编号, 标题, _) in enumerate(行们, 1):
             项 = QListWidgetItem(f"{str(i).rjust(位数)}.  {标题}")
@@ -46,14 +92,16 @@ class 任务选择窗口(QDialog):
         self.列表.itemClicked.connect(self._切换)
         层.addWidget(self.列表, 1)
         行 = QHBoxLayout()
-        self.开始 = 按钮("开始读取（已选 0 条）", "主")
+        self.开始 = 按钮("开始读取（已选 0 条）", "文字")
+        self.开始.setStyleSheet("font-weight:bold;")
         self.开始.setEnabled(False)
         self.开始.clicked.connect(self.accept)
-        取消 = 按钮("取消（这次不读）")
+        取消 = 按钮("取消（这次不读）", "文字")
         取消.clicked.connect(self.reject)
         行.addStretch(1)
         行.addWidget(取消)
         行.addWidget(self.开始)
+        行.addStretch(1)
         层.addLayout(行)
 
     def _切换(self, 项):
@@ -68,43 +116,52 @@ class 任务选择窗口(QDialog):
 
 
 class 飞书设置窗口(QDialog):
+    """规范“弹窗”：标题加粗居中、说明居中；输入框放在分组列表的行里；底部 取消（蓝字）、测试并保存（蓝色加粗）。"""
+
     def __init__(self, 父):
         super().__init__(父)
         self.setWindowTitle("设置飞书群机器人")
         self.setMinimumWidth(560)
         层 = QVBoxLayout(self)
-        层.setContentsMargins(20, 18, 20, 16)
-        层.setSpacing(10)
-        层.addWidget(标签("设置", "眉"))
-        层.addWidget(标签("飞书群机器人", "大标题"))
-        层.addWidget(标签("在飞书群设置 → 群机器人 → 你的机器人 里复制 Webhook 地址，粘贴到下面。\n"
-                         "点“测试并保存”会发一条测试消息，成功才保存。", "说明", 换行=True))
-        表 = QFormLayout()
-        表.setSpacing(10)
+        层.setContentsMargins(24, 20, 24, 16)
+        层.setSpacing(8)
+        头 = 标签("飞书群机器人")
+        头.setAlignment(Qt.AlignCenter)
+        头.setStyleSheet(f"font-size:{字号['弹窗标题']}px; font-weight:bold;")
+        层.addWidget(头)
+        说 = 标签("在飞书群设置 → 群机器人 → 你的机器人 里复制 Webhook 地址，粘贴到下面。"
+                 "点“测试并保存”会发一条测试消息，成功才保存。", "说明", 换行=True)
+        说.setAlignment(Qt.AlignCenter)
+        层.addWidget(说)
+        层.addSpacing(8)
         self.网址 = QLineEdit()
         self.网址.setEchoMode(QLineEdit.Password)
         self.网址.setPlaceholderText("https://open.feishu.cn/open-apis/bot/v2/hook/……（输入时不显示）")
         self.关键词 = QLineEdit(飞书.读设置().get("飞书关键词", ""))
         self.关键词.setPlaceholderText("机器人“安全设置”里的自定义关键词；没有就空着")
-        表.addRow("Webhook 地址", self.网址)
-        表.addRow("自定义关键词", self.关键词)
-        层.addLayout(表)
-        if 飞书.可以发送():
-            层.addWidget(标签("目前已经设置好。只有换群或换机器人时才需要重新填。", "说明"))
-        行 = QHBoxLayout()
-        行.addStretch(1)
-        取消 = 按钮("取消")
+        for 框 in (self.网址, self.关键词):
+            框.setStyleSheet("QLineEdit { border: none; padding: 4px 0; background: transparent; }")
+            框.setMinimumWidth(320)
+        组 = 分组块("", "目前已经设置好。只有换群或换机器人时才需要重新填。" if 飞书.可以发送() else "")
+        组.加行(行("Webhook 地址", self.网址))
+        组.加行(行("自定义关键词", self.关键词))
+        层.addWidget(组)
+        层.addSpacing(8)
+        钮行 = QHBoxLayout()
+        钮行.addStretch(1)
+        取消 = 按钮("取消", "文字")
         取消.clicked.connect(self.reject)
-        钮 = 按钮("测试并保存", "主")
+        钮 = 按钮("测试并保存", "文字")
+        钮.setStyleSheet("font-weight:bold;")
         钮.clicked.connect(self.测试)
-        行.addWidget(取消)
-        行.addWidget(钮)
-        层.addLayout(行)
-
+        钮行.addWidget(取消)
+        钮行.addWidget(钮)
+        钮行.addStretch(1)
+        层.addLayout(钮行)
     def 测试(self):
         网址 = self.网址.text().strip()
         if not 飞书.格式.match(网址):
-            QMessageBox.warning(self, "地址不对", "这不像飞书 Webhook 地址，应该以\nhttps://open.feishu.cn/open-apis/bot/v2/hook/ 开头。")
+            提示.警告(self, "地址不对", "这不像飞书 Webhook 地址，应该以\nhttps://open.feishu.cn/open-apis/bot/v2/hook/ 开头。")
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -113,10 +170,10 @@ class 飞书设置窗口(QDialog):
             QApplication.restoreOverrideCursor()
         if 状态 == "成功":
             飞书.写设置({"飞书Webhook": 网址, "飞书关键词": self.关键词.text().strip(), "飞书已测通": "是"})
-            QMessageBox.information(self, "成功", "✔ 成功！飞书群里应该收到了一条测试消息。\n设置已保存。")
+            提示.信息(self, "成功", "✔ 成功！飞书群里应该收到了一条测试消息。\n设置已保存。")
             self.accept()
         else:
-            QMessageBox.warning(self, "没有成功", f"测试没有成功（{状态}）：{说明}\n\n设置没有保存。")
+            提示.警告(self, "没有成功", f"测试没有成功（{状态}）：{说明}\n\n设置没有保存。")
 
 
 def 模块信息(模块名):
