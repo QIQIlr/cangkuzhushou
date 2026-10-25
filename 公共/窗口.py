@@ -487,10 +487,25 @@ class 小窗检查(QObject):
         return False
 
 
+def _设应用身份():
+    """给仓库助手一个自己的“应用身份”（Windows 的 AppUserModelID）：
+    不设的话，用 pythonw 运行时任务栏会把它算成 Python，显示 Python 的图标。"""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("1LR.仓库助手.测试版")
+    except Exception:
+        pass
+
+
 def main():
     sys.excepthook = _意外
+    _设应用身份()
     应用 = QApplication(sys.argv)
     主题.套用(应用)
+    图标文件 = 根目录 / "公共" / "界面" / "图标" / "仓库助手.ico"     # 小柒 2026-10-25 选的 D（深色货架）
+    if 图标文件.exists():
+        from PySide6.QtGui import QIcon
+        应用.setWindowIcon(QIcon(str(图标文件)))      # 窗口左上角、任务栏、弹窗都用它
     检查 = 小窗检查(应用)
     应用.installEventFilter(检查)
     日志根.mkdir(exist_ok=True)
