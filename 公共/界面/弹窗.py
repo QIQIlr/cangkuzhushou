@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QG
 
 from 公共 import 模块参数, 模块设置, 飞书
 from 公共.界面.主题 import 色
-from 公共.界面.组件 import 分隔线, 卡片, 开关, 按钮, 标签, 空白提示
+from 公共.界面.组件 import 分组块, 分隔线, 勾选行, 卡片, 开关, 按钮, 标签, 空白提示, 行
 
 
 class 任务选择窗口(QDialog):
@@ -142,7 +142,10 @@ class 模块设置面板(QWidget):
         self.总开关开 = False          # 工作台右上角“跑完自动发飞书”，只用来写说明
         外 = QVBoxLayout(self)
         外.setContentsMargins(0, 0, 0, 0)
-        self.卡 = 卡片(18, 12)
+        self.卡 = QWidget()            # 规范：右侧面板不加框，内容直接放在灰底上，用分组块分开
+        self.卡.层 = QVBoxLayout(self.卡)
+        self.卡.层.setContentsMargins(0, 0, 0, 0)
+        self.卡.层.setSpacing(0)
         外.addWidget(self.卡)
         self.空 = 空白提示("设置", "模块设置", "在左边点一个模块，这里就能改它的名字、查询范围和跑完要不要自动发飞书。")
         self.卡.层.addWidget(self.空)
@@ -163,13 +166,12 @@ class 模块设置面板(QWidget):
         from 公共 import 查询范围
         默认, self.可发, 模块说明 = 模块信息(模块名)
         self.参数 = 模块参数.读取(模块名, 默认)
-        # 一闪而过的小窗口（小柒 2026-10-24 报）：以前新面板先不挂在卡片上就去设“显示”，
-        # 那些勾选框、文字就被 Windows 当成独立的小窗口弹出来一下。现在一开始就挂在卡片上、先藏着，搭好再显示。
+        # 一闪而过的小窗口（小柒 2026-10-24 报）：新面板一开始就挂在父控件上、先藏着，搭好再显示。
         self.表 = QWidget(self.卡)
         self.表.hide()
         层 = QVBoxLayout(self.表)
         层.setContentsMargins(0, 0, 0, 0)
-        层.setSpacing(8)
+        层.setSpacing(4)
         层.addWidget(标签("模块设置", "眉"))
         # 名字：平时是文字 + 铅笔，点了变成输入框
         self.名字行 = QWidget()
@@ -177,7 +179,7 @@ class 模块设置面板(QWidget):
         名层.setContentsMargins(0, 0, 0, 0)
         名层.setSpacing(4)
         self.名字字 = 可点标签(模块参数.显示名(模块名))
-        self.名字字.setStyleSheet("font-size:14pt; font-weight:bold;")
+        self.名字字.setProperty("role", "paneltitle")
         self.名字字.setToolTip("点一下改名字")
         self.名字字.点了.connect(self.开始改名)
         名层.addWidget(self.名字字, 0)
@@ -195,9 +197,9 @@ class 模块设置面板(QWidget):
         self.名字框.回车.connect(self.保存名字)
         self.名字框.取消.connect(self.取消改名)
         改层.addWidget(self.名字框, 1)
-        好 = 按钮("", "图标", 图="勾", 图色=色["好"], 提示="保存名字（回车）")
+        好 = 按钮("", "图标", 图="勾", 提示="保存名字（回车）")
         好.clicked.connect(self.保存名字)
-        不 = 按钮("", "图标", 图="错", 提示="不改了（Esc）")
+        不 = 按钮("", "图标", 图="错", 图色=色["弱字"], 提示="不改了（Esc）")
         不.clicked.connect(self.取消改名)
         改层.addWidget(好)
         改层.addWidget(不)
@@ -212,7 +214,7 @@ class 模块设置面板(QWidget):
         原名字.setVisible(模块参数.显示名(模块名) != 模块名)
         if 说明 or 模块说明:
             层.addWidget(标签(说明 or 模块说明, "说明", 换行=True))
-        层.addWidget(分隔线())
+        层.addSpacing(12)
 
         滚 = QScrollArea()
         滚.setWidgetResizable(True)
@@ -220,52 +222,46 @@ class 模块设置面板(QWidget):
         内 = QWidget()
         内层 = QVBoxLayout(内)
         内层.setContentsMargins(0, 0, 4, 0)
-        内层.setSpacing(6)
+        内层.setSpacing(16)
         # 飞书放在前面：一眼就能看到
-        内层.addWidget(标签("飞书", "组名"))
-        self.发送框 = 开关("跑完自动发到飞书群")
+        self.飞书组 = 分组块("飞书")
+        self.发送框 = 开关()
         if self.可发:
             self.发送框.setChecked(bool(self.参数.get("发到飞书", True)))
             self.发送框.toggled.connect(self._改飞书)
-            内层.addWidget(self.发送框)
-        self.飞书说明 = 标签("", "说明", 换行=True)
-        内层.addWidget(self.飞书说明)
-        # 查询范围
+            self.飞书组.加行(行("跑完自动发到飞书群", self.发送框))
+        else:
+            self.飞书组.块.setVisible(False)
+        内层.addWidget(self.飞书组)
+        # 查询范围：仓库、单独的区，各一个分组块；选中的行末尾蓝色 ✓
         self.仓库框, self.区框 = {}, {}
         if "查询范围" in self.参数:
             已选, _ = 查询范围.整理(self.参数.get("查询范围"))
-            内层.addSpacing(8)
-            内层.addWidget(标签("查询范围（每勾一项，单独出一张表）", "组名"))
-            内层.addWidget(标签("仓库", "说明"))
+            仓组 = 分组块("查询范围 · 仓库（每勾一项，单独出一张表）")
             for 仓 in 查询范围.仓库:
-                框 = QCheckBox(查询范围.说明(仓), 内)
+                框 = 勾选行(查询范围.说明(仓), 内)
                 框.setChecked(仓 in 已选)
                 框.toggled.connect(self._改范围)
                 self.仓库框[仓] = 框
-                内层.addWidget(框)
-            内层.addSpacing(4)
-            内层.addWidget(标签("单独的区", "说明"))
-            self.区格 = QGridLayout()
-            self.区格.setHorizontalSpacing(16)
+                仓组.加行(框)
+            内层.addWidget(仓组)
+            self.区组 = 分组块("单独的区")
             for 区 in 查询范围.区域们():
-                框 = QCheckBox(查询范围.说明(区), 内)
+                框 = 勾选行(查询范围.说明(区), 内)
                 框.setChecked(区 in 已选)
                 框.toggled.connect(self._改范围)
                 self.区框[区] = 框
-            内层.addLayout(self.区格)
-            self.范围说明 = 标签("", "说明", 换行=True)
-            内层.addWidget(self.范围说明)
+                self.区组.加行(框)
+            内层.addWidget(self.区组)
             self._排范围()
         内层.addStretch(1)
         滚.setWidget(内)
         层.addWidget(滚, 1)
-        层.addWidget(分隔线())
-        self.保存字 = 标签("改动会自动保存。", "说明")
+        self.保存字 = 标签("改动会自动保存。", "脚注")
         层.addWidget(self.保存字)
         self.卡.层.addWidget(self.表, 1)
         self.表.show()
         self.更新飞书说明()
-
     # ---------- 名字 ----------
     def 开始改名(self):
         if self.表 is None:
@@ -325,19 +321,14 @@ class 模块设置面板(QWidget):
                 框.blockSignals(False)
                 收起.append(f"{区}")
             框.setVisible(not 仓)
-        for 框 in self.区框.values():          # 显示的区按顺序排，收起的不占位置
-            self.区格.removeWidget(框)
-        for i, 框 in enumerate(f for f in self.区框.values() if not f.isHidden()):
-            self.区格.addWidget(框, i // 3, i % 3)
+        self.区组.排线()
+        self.区组.块.setVisible(any(not f.isHidden() for f in self.区框.values()))
         空 = not any(f.isChecked() for f in self.仓库框.values()) and not any(
             f.isChecked() and not f.isHidden() for f in self.区框.values())
         字 = ("已经包含在勾选的仓库里，不用单独勾：" + "、".join(收起) + "。") if 收起 else ""
         if 空:
             字 = "一项都没勾：这个模块即使在左边开着，运行时也不会跑。"
-        self.范围说明.setText(字)
-        self.范围说明.setStyleSheet(f"color:{色['注意']};" if 空 else "")
-        self.范围说明.setVisible(bool(字))
-
+        self.区组.设脚注(字, 色["注意字"] if 空 else None)
     def _改范围(self, _开=None):
         from 公共 import 查询范围
         框 = self.sender()
@@ -371,12 +362,12 @@ class 模块设置面板(QWidget):
                   if self.发送框.isChecked() else "跑完不会自动发。") + "想发的时候，在结果下面点“发到飞书”。"
         else:
             字 = "跑完会自动发到飞书群。" if self.发送框.isChecked() else "跑完不会自动发。想发的时候，在结果下面点“发到飞书”。"
-        self.飞书说明.setText(字)
+        self.飞书组.设脚注(字)
 
     def _已保存(self, 文字):
         from datetime import datetime
         self.保存字.setText(f"✔ {文字}（{datetime.now():%H:%M:%S}）")
-        self.保存字.setStyleSheet(f"color:{色['好']};")
+        self.保存字.setStyleSheet(f"color:{色['好字']};")
         self.已保存.emit(self.模块名)
 
 

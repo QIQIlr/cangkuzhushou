@@ -92,34 +92,22 @@ class 主窗口(QMainWindow):
 
         侧 = QFrame()
         侧.setObjectName("侧栏")
-        侧.setFixedWidth(212)
+        侧.setFixedWidth(220)
         侧层 = QVBoxLayout(侧)
-        侧层.setContentsMargins(14, 18, 14, 14)
+        侧层.setContentsMargins(16, 24, 16, 16)
         侧层.setSpacing(4)
-        标 = QHBoxLayout()
-        标.setSpacing(10)
-        徽 = 图标字("包裹", 色["白"], 16)
-        徽.setFixedSize(34, 34)
-        徽.setStyleSheet(f"color:{色['白']}; background:{色['主']}; border-radius:9px;")
-        标.addWidget(徽)
-        名层 = QVBoxLayout()
-        名层.setSpacing(0)
         名 = 标签("仓库助手")
-        名.setStyleSheet("font-size:13pt; font-weight:bold;")
-        名层.addWidget(名)
-        名层.addWidget(标签("测试版 · 只查询不改数据", "说明"))
-        标.addLayout(名层, 1)
-        侧层.addLayout(标)
-        侧层.addSpacing(18)
-        侧层.addWidget(标签("  菜单", "组名"))
+        名.setObjectName("软件名")
+        侧层.addWidget(名)
+        侧层.addWidget(标签("测试版 · 只查询不改数据", "说明"))
+        侧层.addSpacing(20)
         self.导航组 = QButtonGroup(self)
         self.导航钮 = []
-        图们 = ["首页", "运行", "记录", "设置"]
-        for i, (页, 图) in enumerate(zip(self.页名, 图们)):
-            b = 按钮(页, 图=图)
+        self.导航图 = ["首页", "运行", "记录", "设置"]
+        for i, 页 in enumerate(self.页名):
+            b = 按钮(页, 图=self.导航图[i])
             b.setProperty("nav", "1")
             b.setCheckable(True)
-            b.setIconSize(b.iconSize())
             self.导航组.addButton(b, i)
             self.导航钮.append(b)
             if 页 == "设置":
@@ -127,7 +115,7 @@ class 主窗口(QMainWindow):
                 self.运行中标 = 标签("", "说明")
                 self.运行中标.setWordWrap(True)
                 侧层.addWidget(self.运行中标)
-                侧层.addSpacing(6)
+                侧层.addSpacing(8)
             侧层.addWidget(b)
         self.导航组.idClicked.connect(self.去)
         总.addWidget(侧)
@@ -148,7 +136,10 @@ class 主窗口(QMainWindow):
         总.addWidget(self.页们, 1)
         self.setCentralWidget(中心)
         self.自动发 = self.工作台.自动发
+        # 底部状态栏只在有话说的时候出现（复制成功、测试模式等），平时不占一条横杠
+        self.statusBar().messageChanged.connect(lambda 字: self.statusBar().setVisible(bool(字) or 测试不发送))
         self.statusBar().showMessage("测试模式：不发飞书" if 测试不发送 else "")
+        self.statusBar().setVisible(测试不发送)
         self._本次 = None
         try:   # 打开时：运行结果页先显示上一次的结果（标明时间）
             from 公共 import 上次结果
@@ -162,6 +153,7 @@ class 主窗口(QMainWindow):
     def 去(self, 序号):
         self.导航钮[序号].setChecked(True)
         self.页们.setCurrentIndex(序号)
+        self._导航图标()
         if 序号 == 2:
             self.记录页.刷新()
         elif 序号 == 3:
@@ -170,11 +162,23 @@ class 主窗口(QMainWindow):
     def 刷新模块(self):
         self.工作台.刷新模块()
 
+    def _导航图标(self):
+        """选中的那行蓝底白字，图标也是白的；没选中的是黑色图标（正在运行时“运行结果”是蓝色）。"""
+        for i, b in enumerate(self.导航钮):
+            if b.isChecked():
+                颜色值 = 色["白"]
+            elif i == 1 and getattr(self, "_运行色", None):
+                颜色值 = self._运行色
+            else:
+                颜色值 = 色["字"]
+            b.setIcon(图标(self.导航图[i], 颜色值, 16))
+
     def _运行标(self, 文字, 种="运行"):
         self.运行中标.setText(文字)
-        self.运行中标.setStyleSheet(f"color:{色[种]}; background:{色[种 + '底']}; border-radius:8px; padding:6px 8px;"
+        self.运行中标.setStyleSheet(f"color:{色.get(种 + '字', 色[种])}; background:{色[种 + '底']}; border-radius:8px; padding:8px 12px;"
                                   if 文字 else "")
-        self.导航钮[1].setIcon(图标("运行", 色[种] if 文字 else 色["次字"]))
+        self._运行色 = 色[种] if 文字 else None
+        self._导航图标()
 
     # ---------- 运行 ----------
     def 运行全部(self):

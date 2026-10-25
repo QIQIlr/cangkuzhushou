@@ -8,15 +8,15 @@
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QRegularExpression, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QRegularExpressionValidator
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QStyle, QToolTip,
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen, QRegularExpressionValidator
+from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QSizePolicy, QStyle, QToolTip,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from 公共 import 模块参数, 模块设置, 查询范围
 from 公共.界面 import 运行历史
-from 公共.界面.主题 import 字, 画图标, 状态样子, 色
+from 公共.界面.主题 import 像素字, 字, 画图标, 状态样子, 色
 from 公共.界面.弹窗 import 模块信息, 模块设置面板
-from 公共.界面.组件 import 卡片, 图标字, 开关, 按钮, 标签, 状态标签, 页眉
+from 公共.界面.组件 import 分组块, 卡片, 图标字, 开关, 按钮, 标签, 状态标签, 画开关, 页眉
 from 公共.模块参数 import 显示名
 
 星期 = "一二三四五六日"
@@ -71,111 +71,101 @@ class 名字编辑框(QLineEdit):
         super().__init__(父)
         self.setMaxLength(模块参数.最长)
         self.setValidator(QRegularExpressionValidator(QRegularExpression('[^\\\\/:*?"<>|]*'), self))
-        self.setFont(字(11, True))
+        self.setFont(像素字("行标题", 半粗=True))
         self.setToolTip("回车或点别处 = 保存；Esc = 不改")
 
 
 class 模块卡片画法(QStyledItemDelegate):
-    """把列表的每一行画成一张卡片：拖动把手、开关、名字、说明、范围，右边是上次结果。
-    双击粗体名字 = 原地改名（小柒 2026-10-24）：回车或点别处保存，Esc 不改。双击卡片其他地方不做什么。"""
+    """把列表的每一行画成 iOS 分组列表里的一行（规范“模块行”）：
+    浅灰 ≡ 拖动把手、开关在左，中间模块名 + 一行描述 + 一行灰色“范围 · 是否自动发”，右边大数字 + “● 成功 · 时间”，最右浅灰 ›。
+    行与行之间细线从文字起头处开始。双击粗体名字 = 原地改名（小柒 2026-10-24）：回车或点别处保存，Esc 不改。"""
 
     def __init__(self, 父, 改名):
         super().__init__(父)
         self.改名 = 改名            # 改名(原名, 新名字)：工作台去检查、保存
 
+    def _区(self, 选项):
+        r = QRectF(选项.rect)
+        开关区 = QRectF(r.left() + 36, r.center().y() - 13, 44, 26)
+        return r, 开关区
+
+    def _文左(self, 选项):
+        return self._区(选项)[1].right() + 16
+
     def _名区(self, 选项, 索引=None, 编辑=False):
         """粗体名字所在的位置。编辑=True 时给输入框留宽一点。"""
-        r, 开关区 = self._区(选项)
-        左 = 开关区.right() + 14
-        可用 = r.right() - 150 - 14 - 12 - 左
+        r, _ = self._区(选项)
+        左 = self._文左(选项)
+        可用 = r.right() - 160 - 左
         if 编辑:
-            return QRectF(左 - 6, r.top() + 7, min(260, 可用 + 6), 28).toRect()
+            return QRectF(左 - 6, r.top() + 8, min(260, 可用 + 6), 30).toRect()
         名 = (索引.data(Qt.DisplayRole) or "") if 索引 is not None else ""
-        宽 = min(QFontMetrics(字(11, True)).horizontalAdvance(名) + 10, 可用)
-        return QRectF(左 - 4, r.top() + 8, 宽 + 8, 26)
+        宽 = min(QFontMetrics(像素字("行标题", 半粗=True)).horizontalAdvance(名) + 10, 可用)
+        return QRectF(左 - 4, r.top() + 10, 宽 + 8, 26)
 
     def sizeHint(self, 选项, 索引):
         return QSize(选项.rect.width(), 行高)
-
-    def _区(self, 选项):
-        r = QRectF(选项.rect).adjusted(2, 4, -4, -4)
-        开关区 = QRectF(r.left() + 34, r.center().y() - 10, 38, 20)
-        return r, 开关区
 
     def paint(self, p, 选项, 索引):
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
         r, 开关区 = self._区(选项)
+        列表 = self.parent()
+        外框 = QPainterPath()
+        外框.addRoundedRect(QRectF(列表.viewport().rect()), 12, 12)
+        p.setClipPath(外框)                       # 选中底色在第一行、最后一行也跟着圆角
         选中 = bool(选项.state & QStyle.State_Selected)
-        悬停 = bool(选项.state & QStyle.State_MouseOver)
         开 = _开着(索引)
-        p.setPen(QPen(QColor(色["主"] if 选中 else (色["线深"] if 悬停 else 色["线"])), 1.5 if 选中 else 1))
-        p.setBrush(QColor(色["选中卡底"] if 选中 else 色["面"]))
-        p.drawRoundedRect(r, 10, 10)
-        画图标(p, "拖", QPointF(r.left() + 17, r.center().y()), 13, 色["灰"])
-        # 开关
-        p.setPen(Qt.NoPen if 开 else QPen(QColor(色["灰"]), 1))
-        p.setBrush(QColor(色["主"] if 开 else 色["面"]))
-        p.drawRoundedRect(开关区, 10, 10)
-        半 = 7 if 开 else 6
-        x = 开关区.right() - 10 if 开 else 开关区.left() + 10
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(色["白"] if 开 else 色["弱字"]))
-        p.drawEllipse(QPointF(x, 开关区.center().y()), 半, 半)
-        # 右边：上次结果
-        右宽 = 150
+        if 选中:
+            p.fillRect(r, QColor(色["选中"]))
+        画图标(p, "拖", QPointF(r.left() + 18, r.center().y()), 12, 色["灰"])
+        画开关(p, 开关区, 开)
+        # 右边：› 和上次结果
+        画图标(p, "右", QPointF(r.right() - 20, r.center().y()), 11, 色["灰"])
+        右宽 = 124
         上次 = 索引.data(上次角)
-        右区 = QRectF(r.right() - 右宽 - 14, r.top() + 12, 右宽, r.height() - 24)
+        右区 = QRectF(r.right() - 36 - 右宽, r.top() + 14, 右宽, r.height() - 28)
         if 上次:
             种 = 状态样子.get(上次["状态"], (上次["状态"], "次", "圆"))[1]
             数 = 上次["数量"] if 上次["数量"] not in ("", None) else ("—" if 上次["状态"] != "失败" else "没查到")
-            p.setFont(字(15, True))
+            p.setFont(像素字("大数字", 半粗=True))
             p.setPen(QColor(色["坏"] if 上次["状态"] == "失败" else 色["字"]))
             p.drawText(右区.adjusted(0, 0, 0, -22), Qt.AlignRight | Qt.AlignVCenter, str(数))
-            p.setFont(字(8.5))
+            p.setFont(像素字("说明"))
             文 = f"{上次['状态']} · {上次['时间']:%m/%d %H:%M}"
             宽 = QFontMetrics(p.font()).horizontalAdvance(文)
-            p.setPen(QColor(色[种]))
+            p.setPen(QColor(色.get(种 + "字", 色[种])))
             p.drawText(右区.adjusted(0, 右区.height() - 20, 0, 0), Qt.AlignRight | Qt.AlignVCenter, 文)
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(色[种]))
             p.drawEllipse(QPointF(右区.right() - 宽 - 8, 右区.bottom() - 10), 3.5, 3.5)
         else:
-            p.setFont(字(9))
-            p.setPen(QColor(色["灰"]))
+            p.setFont(像素字("说明"))
+            p.setPen(QColor(色["弱字"]))
             p.drawText(右区, Qt.AlignRight | Qt.AlignVCenter, "还没运行过")
-        # 中间：名字、说明、范围
-        左 = 开关区.right() + 14
-        文区 = QRectF(左, r.top() + 10, 右区.left() - 左 - 12, r.height() - 20)
-        p.setFont(字(11, True))
+        # 中间：名字、说明、范围 · 飞书
+        左 = self._文左(选项)
+        文宽 = int(右区.left() - 左 - 12)
+        p.setFont(像素字("行标题", 半粗=True))
         p.setPen(QColor(色["字"] if 开 else 色["弱字"]))
         名 = 索引.data(Qt.DisplayRole) or ""
-        p.drawText(QRectF(文区.left(), 文区.top(), 文区.width(), 22), Qt.AlignLeft | Qt.AlignVCenter,
-                   QFontMetrics(p.font()).elidedText(名, Qt.ElideRight, int(文区.width())))
-        p.setFont(字(9))
+        p.drawText(QRectF(左, r.top() + 10, 文宽, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(p.font()).elidedText(名, Qt.ElideRight, 文宽))
+        p.setFont(像素字("说明"))
         p.setPen(QColor(色["弱字"]))
         说明 = 索引.data(说明角) or ""
-        p.drawText(QRectF(文区.left(), 文区.top() + 23, 文区.width(), 18), Qt.AlignLeft | Qt.AlignVCenter,
-                   QFontMetrics(p.font()).elidedText(说明, Qt.ElideRight, int(文区.width())))
+        p.drawText(QRectF(左, r.top() + 35, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(p.font()).elidedText(说明, Qt.ElideRight, 文宽))
         范围, 飞 = 索引.data(范围角) or ("", "")
-        p.setFont(字(8.5))
-        x = 文区.left()
-        for 文, 底, 前 in ((范围, 色["底"], 色["次字"]), (飞, 色["主浅"] if 飞 == 自动发字 else 色["底"],
-                                                       色["主"] if 飞 == 自动发字 else 色["弱字"])):
-            if not 文:
-                continue
-            宽 = QFontMetrics(p.font()).horizontalAdvance(文) + 14
-            if x + 宽 > 文区.right():
-                break
-            框 = QRectF(x, 文区.bottom() - 18, 宽, 18)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(底))
-            p.drawRoundedRect(框, 9, 9)
-            p.setPen(QColor(前))
-            p.drawText(框, Qt.AlignCenter, 文)
-            x += 宽 + 6
+        小字 = " · ".join(x for x in (范围, 飞) if x)
+        p.setPen(QColor(色["主"] if 飞 == 自动发字 else 色["弱字"]))
+        p.drawText(QRectF(左, r.top() + 55, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                   QFontMetrics(p.font()).elidedText(小字, Qt.ElideRight, 文宽))
+        # 行间细线：从文字起头处开始，最后一行不画
+        if 索引.row() < 索引.model().rowCount() - 1:
+            p.setPen(QPen(QColor(色["线"]), 1))
+            p.drawLine(QPointF(左, r.bottom()), QPointF(r.right(), r.bottom()))
         p.restore()
-
     # ---- 原地改名 ----
     def createEditor(self, 父, 选项, 索引):
         return 名字编辑框(父)
@@ -220,48 +210,45 @@ class 工作台(QWidget):
         super().__init__()
         self.setObjectName("页面")
         总 = QVBoxLayout(self)
-        总.setContentsMargins(28, 22, 28, 22)
+        总.setContentsMargins(24, 20, 24, 16)
         总.setSpacing(16)
 
         self.头 = 页眉("", "")
-        self.运行选中按钮 = 按钮("只运行选中的", 图="运行")
+        self.运行选中按钮 = 按钮("只运行选中的")
         self.运行选中按钮.setToolTip("先点选一个模块，或按住 Ctrl 点几个。没开的模块也会运行。")
-        self.运行全部按钮 = 按钮("运行已启用模块", "主", 图="运行")
-        self.运行全部按钮.setMinimumHeight(38)
-        self.运行选中按钮.setMinimumHeight(38)
+        self.运行全部按钮 = 按钮("运行已启用模块", "主")
         self.自动发 = 开关("跑完自动发飞书")
         self.自动发.setChecked(bool(自动发设置值))
-        self.自动发.setToolTip("总开关。打开：跑完后，卡片上标着“跑完自动发飞书”的模块会自动发到飞书群。\n"
+        self.自动发.setToolTip("总开关。打开：跑完后，标着“跑完自动发飞书”的模块会自动发到飞书群。\n"
                             "关上：哪个模块都不自动发；想发的时候，在结果下面点“发到飞书”。")
         self.头.右.addWidget(self.自动发)
-        self.头.右.addSpacing(8)
+        self.头.右.addSpacing(4)
         self.头.右.addWidget(self.运行选中按钮)
         self.头.右.addWidget(self.运行全部按钮)
         总.addWidget(self.头)
 
         中 = QHBoxLayout()
-        中.setSpacing(16)
+        中.setSpacing(24)
         左 = QVBoxLayout()
-        左.setSpacing(12)
-        # 需要注意
-        self.注意卡 = 卡片(14, 6)
-        注意头 = QHBoxLayout()
-        注意头.addWidget(图标字("铃", 色["注意"], 14))
-        注意头.addWidget(标签("需要注意", "小标题"))
-        注意头.addStretch(1)
-        看 = 按钮("看运行记录", "淡", 图="记录")
+        左.setSpacing(16)
+        # 需要注意（分组块；没有就不显示）
+        self.注意组 = 分组块("需要注意")
+        看 = 按钮("看运行记录", "文字")
         看.clicked.connect(self.去看记录)
+        注意头 = QHBoxLayout()
+        注意头.setContentsMargins(0, 0, 0, 0)
+        self.注意组.layout().removeWidget(self.注意组.标题)
+        注意头.addWidget(self.注意组.标题)
+        注意头.addStretch(1)
         注意头.addWidget(看)
-        self.注意卡.层.addLayout(注意头)
-        self.注意层 = QVBoxLayout()
-        self.注意层.setSpacing(4)
-        self.注意卡.层.addLayout(self.注意层)
-        左.addWidget(self.注意卡)
-        # 模块
-        模块卡 = 卡片(14, 8)
+        self.注意组.layout().insertLayout(0, 注意头)
+        左.addWidget(self.注意组)
+        # 模块（分组列表）
+        模块区 = QVBoxLayout()
+        模块区.setSpacing(6)
         行 = QHBoxLayout()
-        行.addWidget(标签("模块", "小标题"))
-        self.数量字 = 标签("", "说明")
+        行.setContentsMargins(0, 0, 0, 0)
+        self.数量字 = 标签("", "组名")
         行.addWidget(self.数量字)
         行.addStretch(1)
         self.上移钮 = 按钮("", "图标", 图="上", 提示="上移（选中的模块往前跑）")
@@ -270,13 +257,12 @@ class 工作台(QWidget):
         self.下移钮.clicked.connect(lambda: self.移动(1))
         行.addWidget(self.上移钮)
         行.addWidget(self.下移钮)
-        模块卡.层.addLayout(行)
+        模块区.addLayout(行)
         self.提醒 = 标签("", 换行=True)            # 模块设置.txt 写错、发现新模块
-        self.提醒.setStyleSheet(f"color:{色['注意字']}; background:{色['注意底']}; border-radius:8px; padding:6px 10px;")
-        模块卡.层.addWidget(self.提醒)
+        self.提醒.setStyleSheet(f"color:{色['注意字']}; background:{色['注意底']}; border-radius:12px; padding:8px 16px;")
+        模块区.addWidget(self.提醒)
         self.列表 = QListWidget()
-        self.列表.setStyleSheet("QListWidget { border: none; background: transparent; }"
-                                "QListWidget::item, QListWidget::item:selected, QListWidget::item:hover "
+        self.列表.setStyleSheet("QListWidget::item, QListWidget::item:selected, QListWidget::item:hover "
                                 "{ background: transparent; }")
         self.列表.setItemDelegate(模块卡片画法(self.列表, self._卡片改名))
         self.列表.setEditTriggers(QAbstractItemView.NoEditTriggers)   # 只有双击粗体名字才进入改名
@@ -286,18 +272,20 @@ class 工作台(QWidget):
         self.列表.setMouseTracking(True)
         self.列表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.列表.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.列表.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.列表.itemChanged.connect(lambda _: self.保存模块())
         self.列表.model().rowsMoved.connect(lambda *_: self.保存模块())
         self.列表.currentItemChanged.connect(self._选中变了)
-        模块卡.层.addWidget(self.列表, 1)
-        模块卡.层.addWidget(标签("拖动卡片调整运行顺序（上面的先跑）· 点开关启用或停用 · 按住 Ctrl 可以选多个", "说明", 换行=True))
-        左.addWidget(模块卡, 1)
-        self.飞书总述 = 标签("", "说明", 换行=True)      # 一句话：这次跑完哪些模块会自动发
-        左.addWidget(self.飞书总述)
+        模块区.addWidget(self.列表)
+        模块区.addWidget(标签("拖动调整运行顺序（上面的先跑）；点开关启用或停用；按住 Ctrl 可以选多个。", "脚注", 换行=True))
+        self.飞书总述 = 标签("", "脚注", 换行=True)      # 一句话：这次跑完哪些模块会自动发
+        模块区.addWidget(self.飞书总述)
+        左.addLayout(模块区)
+        左.addStretch(1)
         中.addLayout(左, 1)
 
         self.面板 = 模块设置面板()
-        self.面板.setFixedWidth(350)
+        self.面板.setFixedWidth(320)
         self.面板.已保存.connect(self._设置保存了)
         中.addWidget(self.面板)
         self.自动发.toggled.connect(self._总开关变了)
@@ -307,6 +295,15 @@ class 工作台(QWidget):
         self.运行选中按钮.clicked.connect(self._运行选中)
         self.刷新模块()
 
+    def resizeEvent(self, 事件):
+        super().resizeEvent(事件)
+        self._列表高度()
+
+    def _列表高度(self):
+        """白色块只包住这几个模块，下面不留一大块空白；模块多到放不下时才出滚动条。"""
+        需要 = max(1, self.列表.count()) * 行高 + 2
+        可用 = self.height() - self.头.sizeHint().height() - 150 - (self.注意组.sizeHint().height() if self.注意组.isVisible() else 0)
+        self.列表.setFixedHeight(max(行高 * 2, min(需要, 可用)))
     # ---------- 模块列表（读写和改版前一样） ----------
     def 刷新模块(self):
         清单, 提醒 = 模块设置.读取()
@@ -337,6 +334,7 @@ class 工作台(QWidget):
         self._更新飞书总述()
         self._更新注意(清单)
         self._更新页眉()
+        self._列表高度()
         self._选中变了(self.列表.currentItem())
 
     def 当前清单(self):
@@ -414,7 +412,7 @@ class 工作台(QWidget):
     def _更新数字(self):
         清单 = self.当前清单()
         开数 = sum(1 for _, 开 in 清单 if 开)
-        self.数量字.setText(f"共 {len(清单)} 个，已启用 {开数} 个")
+        self.数量字.setText(f"模块 · 共 {len(清单)} 个，已启用 {开数} 个")
         self.运行全部按钮.setText(f"运行已启用模块（{开数}）")
 
     def _更新页眉(self):
@@ -433,10 +431,12 @@ class 工作台(QWidget):
             self.头.设副标题("还没有运行记录。打开要跑的模块，点右上角“运行已启用模块”。")
 
     def _更新注意(self, 清单):
-        while self.注意层.count():
-            w = self.注意层.takeAt(0).widget()
+        层 = self.注意组.块.层
+        while 层.count():
+            w = 层.takeAt(0).widget()
             if w:
                 w.deleteLater()
+        self.注意组.行们 = []
         条们 = []
         for 名, _ in 清单:
             r = self.上次.get(名)
@@ -446,13 +446,12 @@ class 工作台(QWidget):
                     摘要 = 摘要[len(r["名字"]) + 3:]
                 条们.append((r["状态"], f"{显示名(名)}：上次（{r['时间']:%m/%d %H:%M}）{r['状态']}" + (f"，{摘要}" if 摘要 else "")))
         for 状态, 文字 in 条们[:4]:
-            行 = QWidget()
-            横 = QHBoxLayout(行)
-            横.setContentsMargins(0, 2, 0, 2)
-            横.setSpacing(10)
-            横.addWidget(状态标签(状态, 小=True), 0, Qt.AlignTop)
+            w = QWidget()
+            横 = QHBoxLayout(w)
+            横.setContentsMargins(16, 10, 16, 10)
+            横.setSpacing(12)
+            横.addWidget(状态标签(状态), 0, Qt.AlignTop)
             字条 = 标签(文字, 换行=True)
-            字条.setStyleSheet(f"color:{色['次字']};")
             横.addWidget(字条, 1)
-            self.注意层.addWidget(行)
-        self.注意卡.setVisible(bool(条们))
+            self.注意组.加行(w)
+        self.注意组.setVisible(bool(条们))
