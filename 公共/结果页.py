@@ -71,25 +71,39 @@ def 标签字(项):
 
 
 def _结论条(项):
-    行 = QHBoxLayout()
-    行.setSpacing(10)
-    左 = QVBoxLayout()
-    左.setSpacing(4)
+    """规范“结论条”：左边状态圆点 + 一句话结论；不完整 / 失败时整条用对应状态色的淡底 + 状态色文字。"""
+    状 = 项["状态"]
+    种 = "坏" if 状 == "失败" else "注意" if 状 == "不完整" else None
+    条 = QFrame()
+    if 种:
+        条.setStyleSheet(f"QFrame#结论条 {{ background:{色[种 + '底']}; border-radius:12px; }}")
+    条.setObjectName("结论条")
+    外 = QVBoxLayout(条)
+    外.setContentsMargins(16, 12, 16, 12) if 种 else 外.setContentsMargins(0, 0, 0, 0)
+    外.setSpacing(4)
     眉 = QHBoxLayout()
-    眉.setSpacing(8)
-    眉.addWidget(状态标签(项["状态"]))
+    眉.setSpacing(12)
+    眉.addWidget(状态标签(状))
     if 要看数(项):
         眉.addWidget(状态标签("不完整", f"其中 {要看数(项)} 条要看一下"))
-    眉.addWidget(_标签(项["显示名"], f"color:{色['说明']};", 可选=False, 换行=False))
+    眉.addWidget(_标签(项["显示名"], f"color:{色['说明']}; background:transparent;", 可选=False, 换行=False))
     眉.addStretch(1)
     if 项.get("时间"):
-        眉.addWidget(_标签(f"查询时间 {项['时间']:%m/%d %H:%M}", f"color:{色['说明']};", 换行=False))
-    左.addLayout(眉)
-    结论 = _标签(项.get("结论") or 项.get("标题") or 项["显示名"], "font-size:15pt; font-weight:bold;")
-    左.addWidget(结论)
-    行.addLayout(左, 1)
-    return 行
+        眉.addWidget(_标签(f"查询时间 {项['时间']:%m/%d %H:%M}", f"color:{色['说明']}; background:transparent;", 换行=False))
+    外.addLayout(眉)
+    结论 = _标签(项.get("结论") or 项.get("标题") or 项["显示名"],
+               f"font-size:{主题.字号['标题']}px; font-weight:bold; background:transparent;"
+               + (f"color:{色[种 + '字']};" if 种 else ""))
+    外.addWidget(结论)
+    return 条
 
+
+def _文字钮(文字):
+    """规范“文字按钮”：只有蓝字（打开 Excel、发到飞书、打开日志）。"""
+    b = QPushButton(文字)
+    b.setProperty("kind", "ghost")
+    b.setCursor(Qt.PointingHandCursor)
+    return b
 
 def _打开(路径):
     try:
@@ -123,14 +137,14 @@ def _错误框(错误们, 种, 日志文件夹):
         if i:
             线 = QFrame()
             线.setFrameShape(QFrame.HLine)
-            线.setStyleSheet(f"color:{色['坏线' if 种 == '坏' else '注意线']};")
+            线.setStyleSheet(f"color:{色['坏线' if 种 == '坏' else '注意线']}; background:transparent;")
             层.addWidget(线)
         层.addLayout(格)
     if len(去重) > 3:
         层.addWidget(_标签(f"还有 {len(去重) - 3} 个别的问题，详细的在日志里。"))
     if 日志文件夹:
         行 = QHBoxLayout()
-        钮 = QPushButton("打开这次的日志")
+        钮 = _文字钮("打开这次的日志")
         钮.clicked.connect(lambda: _打开(日志文件夹))
         行.addWidget(钮)
         行.addStretch(1)
@@ -145,7 +159,7 @@ def _提醒框(句们):
     层.setContentsMargins(12, 6, 12, 6)
     层.setSpacing(2)
     for s in 句们:
-        层.addWidget(_标签("⚠ " + s))
+        层.addWidget(_标签("● " + s))
     return 框
 
 
@@ -162,8 +176,8 @@ def 飞书说明(状态, 说明, 手动=False):
             return "没发飞书：还没设置飞书（到“设置”页点“设置飞书”）", False
         return f"没发飞书（{说明}）", False
     if 状态 == "未知":
-        return f"⚠ 不确定飞书发出去没有：{说明}（先去群里看一眼）", True
-    return f"⚠ 飞书没发成功：{说明}", True
+        return f"不确定飞书发出去没有：{说明}（先去群里看一眼）", True
+    return f"飞书没发成功：{说明}", True
 
 
 def _底部(项, 发送):
@@ -176,16 +190,16 @@ def _底部(项, 发送):
         文字, 坏 = 飞书说明(*项["飞书"])
         字 = _标签(文字, f"color:{色['坏'] if 坏 else 色['说明']};")
         行.addWidget(字, 1)
-        钮 = QPushButton("再发一次到飞书" if 项["飞书"][0] == "成功" else "发到飞书")
+        钮 = _文字钮("再发一次到飞书" if 项["飞书"][0] == "成功" else "发到飞书")
         钮.setToolTip("手动把这个结果发到飞书群一次，不看“跑完自动发飞书”的开关。")
         钮.clicked.connect(lambda _=False: 发送(项, 字, 钮))
         行.addWidget(钮)
     if 项.get("附件"):
-        b = QPushButton("打开 Excel")
+        b = _文字钮("打开 Excel")
         b.clicked.connect(lambda _=False, p=项["附件"]: _打开(p))
         行.addWidget(b)
     if 项.get("日志文件夹"):
-        b = QPushButton("打开这次的日志")
+        b = _文字钮("打开这次的日志")
         b.clicked.connect(lambda _=False, p=项["日志文件夹"]: _打开(p))
         行.addWidget(b)
     return 行
@@ -207,6 +221,7 @@ class 数量表格(QTableWidget):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.ClickFocus)
         self.horizontalHeader().setHighlightSections(False)
+        self.setShowGrid(False)              # 规范：没有竖线格子，只有行间细线
         self.itemDoubleClicked.connect(lambda _: self.复制())
 
     def 填(self, 列名, 行们, 起点=False):
@@ -376,7 +391,7 @@ class 区域单号页(QWidget):
             elif 数字 == "0":
                 说, 颜色 = "没有", 色["灰"]
             else:
-                说, 颜色 = f"{数字} 个" + (" ⚠ 不完整" if "不完整" in str(标) else ""), None
+                说, 颜色 = f"{数字} 个" + (" · 不完整" if "不完整" in str(标) else ""), None
             合计行 = str(区).startswith("**")
             牌 = QWidget()
             牌.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -474,7 +489,7 @@ class 面单页(QWidget):
             else:
                 字 += f"<span style='font-family:{等宽}; color:{色['单号字']}'>{_字(页['单号']) or '&nbsp;'}</span>"
                 if 页["要看数"]:
-                    字 += f"&nbsp;&nbsp;<span style='color:{色['注意']}'>⚠ {页['要看数']} 处要看</span>"
+                    字 += f"&nbsp;&nbsp;<span style='color:{色['注意']}'>● {页['要看数']} 处要看</span>"
             牌 = QLabel(字)
             牌.setWordWrap(True)          # 没有类型的任务（客诉、已回复…）标题长，换行显示，不截断
             牌.setContentsMargins(8, 6, 8, 6)
@@ -511,7 +526,7 @@ class 面单页(QWidget):
         self._显示(行)
 
     def _框(self, 内容, 底, 线, 字色):
-        return (f"<table width='100%' cellspacing='0' cellpadding='6' border='1' bgcolor='{底}' "
+        return (f"<table width='100%' cellspacing='0' cellpadding='10' border='0' bgcolor='{底}' "
                 f"style='border-color:{线}; border-style:solid; margin-bottom:6px'><tr><td style='color:{字色}'>{内容}</td></tr></table>")
 
     def _行(self, 行, 键前, x):
@@ -529,7 +544,7 @@ class 面单页(QWidget):
         if x.get("注"):
             内容 += f"<span style='color:{色['说明']}; font-size:9.5pt'>　{_字(x['注'])}</span>"
         if x.get("提醒"):
-            内容 += f"<br><span style='color:{色['注意']}; font-size:10pt'>⚠ {_字(x['提醒'])}</span>"
+            内容 += f"<br><span style='color:{色['注意']}; font-size:10pt'>● {_字(x['提醒'])}</span>"
         上 = "8" if x.get("大") else "2"
         return (f"<tr><td valign='top' width='84' style='color:{色['说明']}; font-size:10pt; padding-top:{上}px'>"
                 f"{_字(x['名'])}</td><td valign='top'>{内容}</td></tr>")
@@ -542,7 +557,7 @@ class 面单页(QWidget):
         if 页["失败"]:
             h.append(self._框("✖ " + _字(页["失败"]), 色["坏底"], 色["坏线"], 色["坏字"]))
         if 页["总结"]:
-            h.append(self._框("⚠ " + "<br>".join(_字(s) for s in 页["总结"]), 色["注意底"], 色["注意线"], 色["注意字"]))
+            h.append(self._框("● " + "<br>".join(_字(s) for s in 页["总结"]), 色["注意底"], 色["注意线"], 色["注意字"]))
         for 段名, 项们 in 页["段们"]:
             h.append(f"<table width='100%' cellspacing='0' cellpadding='3' bgcolor='{色['段']}' style='margin-top:8px'>"
                      f"<tr><td><b>{_字(段名)}</b></td></tr></table>")
@@ -585,7 +600,7 @@ def 一页(项, 状态栏, 发送):
     层 = QVBoxLayout(外)
     层.setContentsMargins(22, 18, 22, 14)
     层.setSpacing(12)
-    层.addLayout(_结论条(项))
+    层.addWidget(_结论条(项))
     if 项.get("错误们"):
         层.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹")))
     句们 = 提醒们(项)

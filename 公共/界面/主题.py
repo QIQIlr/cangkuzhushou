@@ -189,7 +189,8 @@ QTableWidget {{ gridline-color: {色['线']}; }}
 QHeaderView::section {{ background: {色['面']}; color: {色['弱字']}; border: none; border-bottom: 1px solid {色['线']};
     padding: 6px 8px; font-size: {字号['说明']}px; font-weight: normal; }}
 QTableCornerButton::section {{ background: {色['面']}; border: none; }}
-QPlainTextEdit {{ font-family: "{等宽}", "{字体}"; font-size: {字号['说明']}px; color: {色['次字']}; padding: 6px; }}
+QPlainTextEdit {{ font-family: "{等宽}", "{字体}"; font-size: {字号['说明']}px; color: {色['次字']}; padding: 6px;
+    background: {色['面2']}; border-radius: 8px; }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 
@@ -218,9 +219,10 @@ QMessageBox QLabel {{ font-size: {字号['正文']}px; }}
 
 # 结果页里几个表格、列表的样子（结果页.一页 用）
 结果页样式表 = f"""
-QTableWidget#数量表 {{ gridline-color:{色['线']}; border:1px solid {色['线']}; border-radius:8px;
+QTableWidget#数量表 {{ background:{色['面']}; border:none; border-radius:0;
     selection-background-color:{色['选中']}; selection-color:{色['字']}; }}
-QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ border:1px solid {色['线']}; border-radius:8px; }}
+QTableWidget#数量表::item {{ border-bottom:1px solid {色['线']}; padding:0 8px; }}
+QListWidget#任务列表, QListWidget#区域列表, QListWidget#单号列表 {{ background:{色['面']}; border:1px solid {色['线']}; border-radius:12px; }}
 QListWidget#任务列表::item, QListWidget#区域列表::item {{ border-bottom:1px solid {色['线']}; }}
 QListWidget#任务列表::item:selected, QListWidget#区域列表::item:selected {{ background:{色['选中']}; color:{色['字']}; }}
 QListWidget#单号列表::item {{ border-radius:6px; }}
