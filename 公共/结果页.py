@@ -458,158 +458,200 @@ def _数量内容(项, 状态栏):
         return None
     return 表格排列([表块(表, 状态栏) for 表 in 表们])
 
-# ---------------- 样子 B：区域和单号 ----------------
-class 单号列表(QListWidget):
-    """单号排成几列（微软雅黑，和全软件一样）；双击复制一个，多选后 Ctrl+C 复制选中的（每行一个）。
-    高度跟着单号多少走，自己不出滚动条（整页只有一个滚动条）。"""
-    格宽, 格高 = 210, 32
+# ---------------- 样子 B：区域和单号（无任务包裹，2026-10-25 第三轮整页重做） ----------------
+class 单号格(QLabel):
+    """一个单号格子：灰色序号 + 单号。单击选中（按住 Ctrl 可以多选），双击复制这一个。"""
 
-    def __init__(self, 状态栏):
-        super().__init__()
-        self.状态栏 = 状态栏
-        self.setObjectName("单号列表")
-        self.setFlow(QListWidget.LeftToRight)
-        self.setWrapping(True)
-        self.setResizeMode(QListWidget.Adjust)
-        self.setUniformItemSizes(True)
-        self.setGridSize(QSize(self.格宽, self.格高))
-        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFont(主题.像素字(主题.字号["行标题"]))
-        self.itemDoubleClicked.connect(lambda 条: self._复制([条]))
+    def __init__(self, 页, 序, 号, 位数):
+        super().__init__(f"<span style='color:{色['说明']}'>{str(序).zfill(位数)}</span>&nbsp;&nbsp;{_字(号)}")
+        self.页, self.号 = 页, 号
+        self.选中 = False
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("双击复制这个单号；按住 Ctrl 点几个，再按 Ctrl+C 复制选中的")
+        # 宽度完全由“每行几个”平分决定、不看文字长短：各区的格子上下对齐，也不会把页面撑宽
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self._上色()
 
-    def 调高(self):
-        列 = max(1, (self.viewport().width() or self.width()) // self.格宽)
-        行 = -(-self.count() // 列) if self.count() else 1
-        self.setFixedHeight(行 * self.格高 + 12)
+    def _上色(self):
+        self.setStyleSheet(f"QLabel {{ font-size:{主题.字号['行标题']}px; padding:6px 10px; border-radius:8px;"
+                           f" background:{色['选中'] if self.选中 else 'transparent'}; }}")
 
-    def resizeEvent(self, 事件):
-        super().resizeEvent(事件)
-        self.调高()
+    def 设选中(self, 选):
+        self.选中 = 选
+        self._上色()
 
-    def keyPressEvent(self, 事件):
-        if 事件.matches(QKeySequence.Copy):
-            self._复制(sorted(self.selectedItems(), key=self.row))
-        else:
-            super().keyPressEvent(事件)
+    def mousePressEvent(self, 事件):
+        self.页.点格(self, bool(事件.modifiers() & Qt.ControlModifier))
 
-    def _复制(self, 条们):
-        号们 = [条.data(Qt.UserRole) for 条 in 条们]
-        if not 号们:
-            return
-        QApplication.clipboard().setText("\n".join(号们))
-        self.状态栏.showMessage(f"已复制 {号们[0]}" if len(号们) == 1 else f"已复制 {len(号们)} 个单号", 4000)
+    def mouseDoubleClickEvent(self, 事件):
+        self.页.复制([self.号], f"已复制 {self.号}")
 
 
 class 区域单号页(QWidget):
-    """左边各区数量（0 个灰色、没查到红色），右边选中那个区的单号 + “复制这个区全部单号”。"""
-    行高 = 44
+    """无任务包裹：一页全部列出（小柒 2026-10-25 第三轮）。
+    最上面一块总览（每个区几个 + 合计，0 个灰色、没查到红色）；下面每个有单号的区一块：
+    块外“E区 3 个”+ 右边“复制 E区 全部”；块里单号排成格子，每行几个跟窗口宽度走，全页所有区每行个数一样（上下对齐）。
+    复制：双击一个单号复制一个；Ctrl 多选后 Ctrl+C；每区“复制全部”；顶部“复制全部区”。复制出来的格式和以前一样。"""
 
     def __init__(self, 分组, 状态栏):
         super().__init__()
         self.状态栏 = 状态栏
+        self.setFocusPolicy(Qt.ClickFocus)
         self.明细 = {区: (单号们, 文字) for 区, 单号们, 文字 in 分组["明细"]}
-        层 = QHBoxLayout(self)
+        self.格们 = []                  # 全部单号格子（按区、按顺序）
+        self.区格们 = []                # [(网格布局, [格子…])]，每个区一个
+        self.列数 = 0
+        层 = QVBoxLayout(self)
         层.setContentsMargins(0, 0, 0, 0)
         层.setSpacing(16)
-        左 = QVBoxLayout()
-        左.setSpacing(6)
-        左.addWidget(_组名("区域"))
-        self.列表 = QListWidget()
-        self.列表.setObjectName("区域列表")
-        self.列表.setFixedWidth(220)
-        self.列表.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.区们 = []
+
+        # —— 总览：每个区一格 + 合计，一行排开（窄了自动换行）——
+        头 = QHBoxLayout()
+        头.addWidget(_组名("各区数量"))
+        头.addStretch(1)
+        if len(self.明细) > 1:
+            全 = _小钮("复制全部区")
+            全.clicked.connect(lambda: self.复制(None, "已复制全部区的单号"))
+            头.addWidget(全)
+        层.addLayout(头)
+        总览块 = QFrame()
+        总览块.setProperty("card", "1")
+        self.总览格 = QGridLayout(总览块)
+        self.总览格.setContentsMargins(8, 8, 8, 8)
+        self.总览格.setSpacing(0)
+        self.总览项 = []
         _, 总行 = 分组["总览"]
+        self.区们 = []
         for 区, 数, 标 in 总行:
             区名, 数字 = str(区).replace("**", ""), str(数).replace("**", "")
+            合计 = str(区).startswith("**")
+            颜色 = 色["坏"] if 数字 == "失败" else 色["灰"] if 数字 == "0" else 色["字"]
+            说 = "没查到" if 数字 == "失败" else 数字
+            格 = QLabel(f"<span style='color:{色['说明']}; font-size:{主题.字号['说明'] + 1}px'>{_字(区名)}</span><br>"
+                       f"<span style='color:{颜色}; font-size:{主题.字号['大数字']}px; font-weight:bold'>{_字(说)}</span>")
+            格.setAlignment(Qt.AlignCenter)
+            格.setMinimumWidth(84)
+            格.setStyleSheet("padding:6px 4px;" + (f"background:{色['面2']}; border-radius:8px;" if 合计 else ""))
+            self.总览项.append(格)
+            if not 合计:
+                self.区们.append((区名, 数字, str(标)))
+        层.addWidget(总览块)
+
+        # —— 每个区一块 ——
+        位数 = max(2, len(str(max([len(v[0]) for v in self.明细.values()] or [1]))))
+        测 = QLabel(f"{'0' * 位数}  261012-001766")
+        测.setStyleSheet(f"font-size:{主题.字号['行标题']}px; padding:6px 10px;")
+        self.格宽 = 测.sizeHint().width() + 16
+        for 区名, 数字, 标 in self.区们:
+            if 区名 not in self.明细 and 数字 != "失败":
+                continue                         # 0 个的区只在总览里显示
+            块头 = QHBoxLayout()
+            块头.setSpacing(10)
+            块头.addWidget(_组名(f"{区名}  {len(self.明细[区名][0])} 个" if 区名 in self.明细 else 区名))
             if 数字 == "失败":
-                说, 颜色 = "没查到", 色["坏"]
-            elif 数字 == "0":
-                说, 颜色 = "没有", 色["弱字"]
-            else:
-                说, 颜色 = f"{数字} 个" + (" · 不完整" if "不完整" in str(标) else ""), None
-            合计行 = str(区).startswith("**")
-            牌 = QWidget()
-            牌.setAttribute(Qt.WA_TransparentForMouseEvents)
-            横 = QHBoxLayout(牌)
-            横.setContentsMargins(16, 0, 16, 0)
-            样 = ("font-weight:bold;" if 合计行 else "") + f"font-size:{主题.字号['行标题']}px; background:transparent;"
-            横.addWidget(_标签(区名, 样, 可选=False, 换行=False))
-            横.addStretch(1)
-            横.addWidget(_标签(说, 样 + (f"color:{颜色};" if 颜色 else ""), 可选=False, 换行=False))
-            条 = QListWidgetItem()
-            条.setSizeHint(QSize(200, self.行高))
-            if 合计行:
-                条.setFlags(Qt.ItemIsEnabled)
-            self.列表.addItem(条)
-            self.列表.setItemWidget(条, 牌)
-            self.区们.append((区名, 数字))
-        self.列表.setFixedHeight(max(1, self.列表.count()) * self.行高 + 4)
-        self.列表.currentRowChanged.connect(self._换区)
-        左.addWidget(self.列表)
-        左.addStretch(1)
-        层.addLayout(左)
-        右 = QVBoxLayout()
-        右.setSpacing(6)
-        头 = QHBoxLayout()
-        self.标题 = _组名("")
-        self.标题.setMinimumWidth(40)               # 窄的时候标题让位，复制按钮的字不被挤掉
-        self.标题.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        头.addWidget(self.标题, 1)
-        self.复制钮 = _文字钮("")
-        self.复制钮.clicked.connect(self._复制全部)
-        头.addWidget(self.复制钮)
-        右.addLayout(头)
-        self.单号们 = 单号列表(状态栏)
-        self.单号块 = self.单号们              # 单号列表自己就是白色圆角块（不再套一层，高度才跟得上）
-        右.addWidget(self.单号块)
-        self.空 = _标签("", f"color:{色['说明']}; font-size:{主题.字号['行标题']}px; padding:12px 4px;")
-        self.空.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        右.addWidget(self.空)
-        self.提示 = _标签("双击一个单号就复制这一个；按住 Ctrl 点几个，再按 Ctrl+C 复制选中的。",
-                        f"color:{色['说明']}; font-size:{主题.字号['说明']}px; padding-left:16px;")
-        右.addWidget(self.提示)
-        右.addStretch(1)
-        层.addLayout(右, 1)
-        self.当前区 = None
-        for r, (区名, _) in enumerate(self.区们):
+                块头.addWidget(状态标签("失败", "没查到", 醒目=True))
+            elif "不完整" in 标:
+                块头.addWidget(状态标签("不完整", 醒目=True))
+            块头.addStretch(1)
             if 区名 in self.明细:
-                self.列表.setCurrentRow(r)
-                break
+                钮 = _小钮(f"复制 {区名} 全部")
+                钮.clicked.connect(lambda _=False, 区=区名: self.复制(区, f"已复制 {区} {len(self.明细[区][0])} 个单号"))
+                块头.addWidget(钮)
+            层.addLayout(块头)
+            if 区名 in self.明细:
+                块 = QFrame()
+                块.setProperty("card", "1")
+                网 = QGridLayout(块)
+                网.setContentsMargins(8, 8, 8, 8)
+                网.setHorizontalSpacing(4)
+                网.setVerticalSpacing(2)
+                单号们 = self.明细[区名][0]
+                格们 = [单号格(self, i, 号, 位数) for i, 号 in enumerate(单号们, 1)]
+                self.格们 += 格们
+                self.区格们.append((网, 格们))
+                层.addWidget(块)
+            说明 = ("这个区没查到（不是 0），原因见上面。" if 数字 == "失败" else
+                  "读到的单号比页面上的总数少，请到 WMS 核对。" if "不完整" in 标 else "")
+            if 说明:
+                脚 = _标签(说明, f"color:{色['说明']}; font-size:{主题.字号['说明']}px; padding-left:16px;")
+                层.addWidget(脚)
+        层.addWidget(_标签("双击一个单号就复制这一个；按住 Ctrl 点几个，再按 Ctrl+C 复制选中的。",
+                         f"color:{色['说明']}; font-size:{主题.字号['说明']}px; padding-left:16px;"))
+        self._排(900)
+
+    def _排(self, 宽):
+        """全页统一的每行个数：按可用宽度能放下几个完整的格子算；总览也按同样的规则排。"""
+        列 = max(1, (宽 - 16) // self.格宽)
+
+        if 列 == self.列数:
+            return
+        self.列数 = 列
+        for 网, 格们 in self.区格们:
+            for 格 in 格们:
+                网.removeWidget(格)
+            for 空 in getattr(网, "_空们", []):
+                网.removeWidget(空)
+                空.deleteLater()
+            for i, 格 in enumerate(格们):
+                网.addWidget(格, i // 列, i % 列)
+            # 单号比一行少的区：后面补看不见的空格子，这样列宽和别的区一样，格子上下对齐
+            网._空们 = []
+            for c in range(len(格们), 列):
+                空 = QWidget(网.parentWidget())
+                空.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+                网.addWidget(空, 0, c)
+                网._空们.append(空)
+            for c in range(列):                 # 空着的列也占同样宽度：各区格子上下对齐
+                网.setColumnStretch(c, 1)
+            for c in range(列, 60):
+                网.setColumnStretch(c, 0)
+        总列 = max(1, min(len(self.总览项), (宽 - 16) // 90))
+        for 项 in self.总览项:
+            self.总览格.removeWidget(项)
+        for i, 项 in enumerate(self.总览项):
+            self.总览格.addWidget(项, i // 总列, i % 总列)
+
+    def resizeEvent(self, 事件):
+        super().resizeEvent(事件)
+        self._排(self.width())
+
+    # —— 选中和复制 ——
+    def 点格(self, 格, 多选):
+        if not 多选:
+            for g in self.格们:
+                if g is not 格 and g.选中:
+                    g.设选中(False)
+            格.设选中(True)
         else:
-            self._换区(-1)
+            格.设选中(not 格.选中)
+        self.setFocus()
 
-    def _换区(self, 行):
-        区名, 数字 = self.区们[行] if 0 <= 行 < len(self.区们) else (None, None)
-        self.当前区 = 区名 if 区名 in self.明细 else None
-        有 = self.当前区 is not None
-        for w in (self.单号块, self.复制钮, self.提示):
-            w.setVisible(有)
-        self.空.setVisible(not 有)
-        if not 有:
-            self.标题.setText(区名 or "")
-            self.空.setText("这个区没查到（不是 0），原因见上面。" if 数字 == "失败" else
-                           "这个区没有。" if 区名 else "所选区域都没有。")
-            return
-        单号们, _ = self.明细[区名]
-        self.标题.setText(f"{区名} 的转运单号（{len(单号们)} 个）")
-        self.复制钮.setText(f"复制 {区名} 全部 {len(单号们)} 个单号")
-        self.单号们.clear()
-        位数 = max(2, len(str(len(单号们))))
-        for i, 号 in enumerate(单号们, 1):
-            条 = QListWidgetItem(f"{str(i).zfill(位数)}  {号}")
-            条.setData(Qt.UserRole, 号)
-            self.单号们.addItem(条)
-        self.单号们.调高()
+    def keyPressEvent(self, 事件):
+        if 事件.matches(QKeySequence.Copy):
+            号们 = [g.号 for g in self.格们 if g.选中]
+            if 号们:
+                self.复制(号们, f"已复制 {号们[0]}" if len(号们) == 1 else f"已复制 {len(号们)} 个单号")
+        else:
+            super().keyPressEvent(事件)
 
-    def _复制全部(self):
-        if self.当前区 is None:
-            return
-        单号们, 文字 = self.明细[self.当前区]
+    def 复制(self, 内容, 提示):
+        """内容：单号列表（每行一个）；区名（这个区的“标题行 + 序号<Tab>单号”，和以前一样）；None = 全部区。"""
+        if isinstance(内容, list):
+            文字 = "\n".join(内容)
+        elif 内容 is None:
+            文字 = "\n\n".join(v[1] for v in self.明细.values())
+        else:
+            文字 = self.明细[内容][1]
         QApplication.clipboard().setText(文字)
-        self.状态栏.showMessage(f"已复制 {self.当前区} {len(单号们)} 个单号", 5000)
+        if self.状态栏 is not None:
+            self.状态栏.showMessage(提示, 4000)
+
+
+def _小钮(文字):
+    b = QPushButton(文字)
+    b.setProperty("kind", "small")
+    b.setCursor(Qt.PointingHandCursor)
+    return b
 
 
 # ---------------- 样子 C：任务和面单 ----------------
