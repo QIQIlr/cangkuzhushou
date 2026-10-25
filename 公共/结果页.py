@@ -276,9 +276,21 @@ class 数量表格(QTableWidget):
         self.resizeRowsToContents()
         for c in range(len(列名)):
             self.setColumnWidth(c, self.columnWidth(c) + (16 if c == 0 else 22))
-        宽 = sum(self.columnWidth(c) for c in range(len(列名))) + 2 * self.frameWidth()
-        高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(len(行们))) + 2 * self.frameWidth()
-        self.setFixedSize(宽, 高)
+        self._自然列 = [self.columnWidth(c) for c in range(len(列名))]
+        self.自然宽 = sum(self._自然列) + 2 * self.frameWidth()       # 完整显示需要的最小宽度
+        self.自然高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(len(行们))) + 2 * self.frameWidth()
+        self.拉到(getattr(self, "目标宽", 0))
+
+    def 拉到(self, 目标宽):
+        """自动排版用（2026-10-25 第三轮）：同一行的表一样宽。比完整宽度宽出来的部分平均分给各列；永远不比完整宽度窄。"""
+        self.目标宽 = 目标宽
+        if not getattr(self, "_自然列", None):
+            return
+        多 = max(0, 目标宽 - self.自然宽)
+        n = len(self._自然列)
+        for c, w in enumerate(self._自然列):
+            self.setColumnWidth(c, w + 多 // n + (多 % n if c == 0 else 0))
+        self.setFixedSize(max(self.自然宽, 目标宽), self.自然高)
 
     def keyPressEvent(self, 事件):
         if 事件.matches(QKeySequence.Copy):
@@ -323,34 +335,120 @@ def _组名(文字):
     return l
 
 
+class 表块(QWidget):
+    """一个仓库（或一个单独的区）的数量表：上面一行“名字 …… 合计 / 合箱拣货 / 单箱拣货”，下面白色圆角块里是表。
+    宽度和高度由 表格排列 统一给（同一行的表一样宽、一样高）；表永远不比完整显示需要的宽度窄。"""
+
+    def __init__(self, 表, 状态栏):
+        super().__init__()
+        层 = QVBoxLayout(self)
+        层.setContentsMargins(0, 0, 0, 0)
+        层.setSpacing(6)
+        头 = QHBoxLayout()
+        头.setSpacing(12)
+        名 = _组名(表["名"])
+        self.名宽 = 名.sizeHint().width()
+        头.addWidget(名)
+        头.addStretch(1)
+        self.格 = 数量表格(状态栏)
+        self.段钮们 = []
+        视图们 = 表["视图们"]
+        if len(视图们) > 1:
+            轨 = QFrame()                  # 规范“分段控件”：灰色轨道，选中那段白底；放在标题行右边
+            轨.setObjectName("分段")
+            轨层 = QHBoxLayout(轨)
+            轨层.setContentsMargins(2, 2, 2, 2)
+            轨层.setSpacing(2)
+            头.addWidget(轨)
+            组 = QButtonGroup(self)
+            for k, (视图名, 列, 行) in enumerate(视图们):
+                钮 = QPushButton(视图名)
+                钮.setProperty("seg", "1")
+                钮.setCheckable(True)
+                钮.setChecked(k == 0)
+                钮.setCursor(Qt.PointingHandCursor)
+                钮.clicked.connect(lambda _=False, 列=列, 行=行, 起=表["起点"]: self.格.填(列, 行, 起))
+                组.addButton(钮)
+                轨层.addWidget(钮)
+                self.段钮们.append(钮)
+        层.addLayout(头)
+        # 切到合箱 / 单箱后表的宽度、高度不跳：先把每种看法都填一遍，记下最大的，再回到第一种
+        宽们, 高们 = [], []
+        for _, 列, 行 in 视图们:
+            self.格.填(列, 行, 表["起点"])
+            宽们.append(self.格.自然宽)
+            高们.append(self.格.自然高)
+        self.格.填(视图们[0][1], 视图们[0][2], 表["起点"])
+        self.格.自然宽, self.格.自然高 = max(宽们), max(高们)
+        self.格.拉到(0)
+        self.卡 = _白块(self.格, 8)
+        层.addWidget(self.卡, 0, Qt.AlignLeft | Qt.AlignTop)
+        层.addStretch(1)
+        self.头高 = 32
+
+    def 最小宽(self):
+        段宽 = sum(b.width() for b in self.段钮们) + 4 * len(self.段钮们) + 4 if self.段钮们 else 0
+        return max(self.格.自然宽 + 16, self.名宽 + 12 + 段宽)
+
+    def 自然高(self):
+        return self.头高 + 6 + self.格.自然高 + 16
+
+    def 定大小(self, 宽, 高):
+        self.格.拉到(宽 - 16)
+        self.卡.setFixedSize(宽, 高 - self.头高 - 6)
+        self.setFixedSize(宽, 高)
+
+
 class 表格排列(QWidget):
-    """数量表并排放（瑞江、松户两张表并排）；窗口太窄放不下时自动改成上下排。整页只有一个滚动条，这里不滚。"""
+    """数量表自动排版（规范 v1.4“自动排版”，小柒 2026-10-25 第三轮）：
+    先算每张表完整显示要多宽；当前宽度放得下几张完整的表，一行就放几张（全放得下就全并排，一张都放不下就一张一行）；
+    同一行的表一样宽、一样高（矮的补空白）；窗口大小一变就重新排。任何宽度都不会出现左右滚动、不会截掉列。"""
+    间距 = 16
 
     def __init__(self, 块们):
         super().__init__()
         self.块们 = 块们
-        self.格 = QGridLayout(self)
-        self.格.setContentsMargins(0, 0, 0, 0)
-        self.格.setHorizontalSpacing(16)
-        self.格.setVerticalSpacing(20)
-        self.列数 = 0
-        self._排(len(块们))
+        for 块 in 块们:
+            块.setParent(self)
+        # 所有表的切换按钮一样大
+        钮们 = [b for 块 in 块们 for b in 块.段钮们]
+        if 钮们:
+            宽 = max(b.sizeHint().width() for b in 钮们)
+            for b in 钮们:
+                b.setFixedWidth(宽)
+        self._上次宽 = None
+        self._排(900)
 
-    def _排(self, 列数):
-        if 列数 == self.列数:
+    def _每行几张(self, 总宽):
+        n = len(self.块们)
+        for k in range(n, 0, -1):
+            行们 = [self.块们[i:i + k] for i in range(0, n, k)]
+            if all(k * max(b.最小宽() for b in 行) + self.间距 * (k - 1) <= 总宽 for 行 in 行们):
+                return k
+        return 1
+
+    def _排(self, 总宽):
+        if 总宽 == self._上次宽 or 总宽 <= 0:
             return
-        self.列数 = 列数
-        for 块 in self.块们:
-            self.格.removeWidget(块)
-        for i, 块 in enumerate(self.块们):
-            self.格.addWidget(块, i // 列数, i % 列数, Qt.AlignLeft | Qt.AlignTop)
-        self.格.setColumnStretch(列数, 1)
-        self.格.setRowStretch(len(self.块们), 1)
+        self._上次宽 = 总宽
+        k = self._每行几张(总宽)
+        y = 0
+        for i in range(0, len(self.块们), k):
+            行 = self.块们[i:i + k]
+            最宽 = max(b.最小宽() for b in 行)
+            # 一行几张平分这一行的宽度，但最多拉宽到完整宽度的 1.5 倍（不然全屏时一张表会被拉得很稀）
+            宽 = max(最宽, min((总宽 - self.间距 * (k - 1)) // k, int(最宽 * 1.5)))
+            高 = max(b.自然高() for b in self.块们[i:i + k])
+            for j, b in enumerate(行):
+                b.定大小(宽, 高)
+                b.move(j * (宽 + self.间距), y)
+                b.show()
+            y += 高 + 20
+        self.setFixedHeight(max(0, y - 20))
 
     def resizeEvent(self, 事件):
         super().resizeEvent(事件)
-        总宽 = sum(块.sizeHint().width() for 块 in self.块们) + 16 * (len(self.块们) - 1)
-        self._排(len(self.块们) if 总宽 <= self.width() else 1)
+        self._排(self.width())
 
 
 def _数量内容(项, 状态栏):
@@ -358,41 +456,7 @@ def _数量内容(项, 状态栏):
                              for 名, 列, 行 in 项.get("表们", []) if 行]
     if not 表们:
         return None
-    块们 = []
-    for 表 in 表们:
-        块 = QWidget()
-        层 = QVBoxLayout(块)
-        层.setContentsMargins(0, 0, 0, 0)
-        层.setSpacing(6)
-        头 = QHBoxLayout()
-        头.setSpacing(12)
-        头.addWidget(_组名(表["名"]))
-        格 = 数量表格(状态栏)
-        视图们 = 表["视图们"]
-        if len(视图们) > 1:
-            轨 = QFrame()                  # 规范“分段控件”：灰色轨道，选中那段白底
-            轨.setObjectName("分段")
-            轨层 = QHBoxLayout(轨)
-            轨层.setContentsMargins(2, 2, 2, 2)
-            轨层.setSpacing(2)
-            头.addWidget(轨)
-            组 = QButtonGroup(块)
-            for k, (视图名, 列, 行) in enumerate(视图们):
-                钮 = QPushButton(视图名)
-                钮.setProperty("seg", "1")
-                钮.setCheckable(True)
-                钮.setChecked(k == 0)
-                钮.setCursor(Qt.PointingHandCursor)
-                钮.clicked.connect(lambda _=False, 列=列, 行=行, 起=表["起点"], 格=格: 格.填(列, 行, 起))
-                组.addButton(钮)
-                轨层.addWidget(钮)
-        头.addStretch(1)
-        层.addLayout(头)
-        格.填(视图们[0][1], 视图们[0][2], 表["起点"])
-        层.addWidget(_白块(格, 8), 0, Qt.AlignLeft)
-        块们.append(块)
-    return 表格排列(块们)
-
+    return 表格排列([表块(表, 状态栏) for 表 in 表们])
 
 # ---------------- 样子 B：区域和单号 ----------------
 class 单号列表(QListWidget):

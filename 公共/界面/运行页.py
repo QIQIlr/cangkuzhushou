@@ -88,14 +88,16 @@ class 运行页(QWidget):
         顶层.addWidget(self.进度文字)
         self.进度条 = QProgressBar()
         self.进度条.setTextVisible(False)
-        self.进度条.setFixedWidth(180)
-        顶层.addWidget(self.进度条)
-        self.步骤文字 = 标签("", "说明")
-        self.步骤文字.setMinimumWidth(40)
-        self.步骤文字.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        顶层.addWidget(self.步骤文字, 1)
-        self.计数 = 标签("", "说明")
-        顶层.addWidget(self.计数)
+        顶层.addWidget(self.进度条, 1)              # 进度条拉满这一行剩下的宽度（小柒 2026-10-25 第三轮）
+        self.百分比 = 标签("0%", "说明")
+        self.百分比.setMinimumWidth(40)
+        顶层.addWidget(self.百分比)
+        self.进度条.valueChanged.connect(lambda v: self.百分比.setText(f"{round(v / 10)}%"))
+        # 当前步骤、第几个不再单独占位置：第几个写进左边的字，当前步骤放在鼠标停留提示和“运行过程”里
+        self.步骤文字 = QLabel(self)
+        self.步骤文字.hide()
+        self.计数 = QLabel(self)
+        self.计数.hide()
         self.日志钮 = 按钮("打开这次的日志", "文字")
         self.日志钮.clicked.connect(lambda: self.本次日志 and os.startfile(self.本次日志))
         self.日志钮.setVisible(False)
@@ -252,9 +254,10 @@ class 运行页(QWidget):
 
     def 步骤(self, 文字):
         self.步骤文字.setText(文字.rstrip(" …"))
+        self.进度文字.setToolTip(文字.rstrip(" …"))
 
     def 模块开始(self, 序号, 总数, 名):
-        self.进度文字.setText(f"正在运行：{显示名(名)}")
+        self.进度文字.setText(f"正在运行：{显示名(名)}（{序号}/{总数}）")
         self.步骤文字.setText("")
         self.计数.setText(f"{序号} / {总数}")
         i = 序号 - 1
@@ -327,13 +330,13 @@ class 运行页(QWidget):
         self.显示结果(结果们)
         没跑 = len(名们) - len(结果们)
         有问题 = sum(1 for 项 in 结果们 if 项["状态"] not in ("成功", "无数据", "未运行"))
-        self.进度条.setValue(int(1000 * len(结果们) / max(1, len(名们))))
+        self.进度条.setValue(1000 if 数据.get("完成") else int(1000 * len(结果们) / max(1, len(名们))))
         self.计数.setText(f"{len(结果们)} / {len(名们)}")
         self.眉.setText(f"上一次运行 · {数据['开始']:%m/%d %H:%M} 开始 · " + " → ".join(map(显示名, 名们)))
         self.进度文字.setText(f"上一次运行的结果（{数据['开始']:%m/%d %H:%M}）"
                           + ("" if 数据.get("完成") else f"：那次没有跑完，{没跑} 个模块没有结果")
                           + (f"，{有问题} 个模块有问题" if 有问题 else ""))
-        self.步骤文字.setText("这不是现在的数字。要最新的，到工作台点运行。")
+        self.进度文字.setToolTip("")
         self._进度图("记录", "注意" if 有问题 or not 数据.get("完成") else "次")
         for i in range(self.列表.count()):
             if i not in self.已显示:
@@ -346,8 +349,7 @@ class 运行页(QWidget):
 
     def 出错(self):
         self._计时.stop()                               # 停在当时的位置，不假装走完
-        self.进度文字.setText("运行时出现意外错误")
-        self.步骤文字.setText("详情已保存到 日志\\窗口错误.txt，请告诉 Claude。")
+        self.进度文字.setText("运行时出现意外错误（详情在 日志\\窗口错误.txt，请告诉 Claude）")
         self._进度图("错", "坏")
 
     def _换详情(self, i, 新):
