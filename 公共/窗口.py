@@ -19,7 +19,7 @@ from pathlib import Path
 根目录 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(根目录))
 
-from PySide6.QtCore import QLockFile, QObject, Qt, QTimer, Signal  # noqa: E402
+from PySide6.QtCore import QLockFile, QObject, QSize, Qt, QTimer, Signal  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QMainWindow,  # noqa: E402
                                QStackedWidget, QVBoxLayout, QWidget)
 
@@ -91,17 +91,29 @@ class 主窗口(QMainWindow):
         总.setContentsMargins(0, 0, 0, 0)
         总.setSpacing(0)
 
-        侧 = QFrame()
+        # 左侧菜单可以收起（小柒 2026-10-25）：收起只剩图标（约 64px），展开是图标 + 文字（约 212px）；
+        # 顶部 ☰ 切换，记住上次的样子；进“运行结果”时自动收起，手动展开过就不再自动收。
+        self.侧 = 侧 = QFrame()
         侧.setObjectName("侧栏")
-        侧.setFixedWidth(220)
         侧层 = QVBoxLayout(侧)
-        侧层.setContentsMargins(16, 24, 16, 16)
+        侧层.setContentsMargins(12, 16, 12, 16)
         侧层.setSpacing(4)
-        名 = 标签("仓库助手")
-        名.setObjectName("软件名")
-        侧层.addWidget(名)
-        侧层.addWidget(标签("测试版 · 只查询不改数据", "说明"))
-        侧层.addSpacing(20)
+        头行 = QHBoxLayout()
+        头行.setContentsMargins(0, 0, 0, 0)
+        self.折叠钮 = 按钮("", "图标", 图="列表", 图色=色["字"], 提示="收起 / 展开菜单")
+        self.折叠钮.setIconSize(QSize(20, 20))
+        self.折叠钮.setFixedSize(40, 36)
+        self.折叠钮.clicked.connect(lambda: self.设菜单收起(not self.菜单收起, 手动=True))
+        头行.addWidget(self.折叠钮)
+        头行.addStretch(1)
+        侧层.addLayout(头行)
+        侧层.addSpacing(8)
+        self.软件名 = 标签("仓库助手")
+        self.软件名.setObjectName("软件名")
+        侧层.addWidget(self.软件名)
+        self.软件说明 = 标签("测试版 · 只查询不改数据", "说明")
+        侧层.addWidget(self.软件说明)
+        侧层.addSpacing(16)
         self.导航组 = QButtonGroup(self)
         self.导航钮 = []
         self.导航图 = ["首页", "运行", "记录", "设置"]
@@ -142,6 +154,8 @@ class 主窗口(QMainWindow):
         self.statusBar().showMessage("测试模式：不发飞书" if 测试不发送 else "")
         self.statusBar().setVisible(测试不发送)
         self._本次 = None
+        self.菜单手动展开过 = False
+        self.设菜单收起(bool(模块参数.界面设置("菜单收起", False)))
         try:   # 打开时：运行结果页先显示上一次的结果（标明时间）
             from 公共 import 上次结果
             数据 = 上次结果.读取()
@@ -151,10 +165,31 @@ class 主窗口(QMainWindow):
             _记下窗口错误("显示上一次的结果时出错：\n" + traceback.format_exc())
         self.去(0)
 
+    def 设菜单收起(self, 收起, 手动=False):
+        """收起 = 只剩图标（鼠标停在图标上显示文字）；展开 = 图标 + 文字。记进 模块参数.json 的“界面”。"""
+        from 公共 import 模块参数
+        self.菜单收起 = bool(收起)
+        if 手动 and not 收起:
+            self.菜单手动展开过 = True
+        self.侧.setFixedWidth(64 if 收起 else 212)
+        for w in (self.软件名, self.软件说明):
+            w.setVisible(not 收起)
+        self.运行中标.setVisible(not 收起 and bool(self.运行中标.text()))
+        for i, b in enumerate(self.导航钮):
+            b.setText("" if 收起 else self.页名[i])
+            b.setToolTip(self.页名[i] if 收起 else "")
+            b.setProperty("narrow", "1" if 收起 else "0")
+            b.style().unpolish(b)
+            b.style().polish(b)
+        if 手动:                       # 只记你自己点 ☰ 的结果；进结果页时自动收起不记
+            模块参数.保存界面设置("菜单收起", self.菜单收起)
+
     def 去(self, 序号):
         self.导航钮[序号].setChecked(True)
         self.页们.setCurrentIndex(序号)
         self._导航图标()
+        if 序号 == 1 and not self.菜单收起 and not self.菜单手动展开过:
+            self.设菜单收起(True)          # 看结果时把地方让给结果
         if 序号 == 2:
             self.记录页.刷新()
         elif 序号 == 3:
@@ -176,6 +211,7 @@ class 主窗口(QMainWindow):
 
     def _运行标(self, 文字, 种="运行"):
         self.运行中标.setText(文字)
+        self.运行中标.setVisible(bool(文字) and not getattr(self, "菜单收起", False))
         self.运行中标.setStyleSheet(f"color:{色.get(种 + '字', 色[种])}; background:{色[种 + '底']}; border-radius:8px; padding:8px 12px;"
                                   if 文字 else "")
         self._运行色 = 色[种] if 文字 else None

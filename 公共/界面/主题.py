@@ -127,6 +127,7 @@ QPushButton[nav="1"] {{ text-align: left; padding: 8px 12px; border: none; borde
     color: {色['字']}; font-size: {字号['行标题']}px; min-height: 22px; }}
 QPushButton[nav="1"]:hover {{ background: {色['次钮底']}; }}
 QPushButton[nav="1"]:checked {{ background: {色['主']}; color: {色['白']}; }}
+QPushButton[nav="1"][narrow="1"] {{ text-align: center; padding: 8px 0; }}
 QWidget#页面 {{ background: {色['底']}; }}
 QLabel[role="eyebrow"] {{ color: {色['弱字']}; font-size: {字号['说明'] + 1}px; }}
 QLabel[role="title"] {{ font-size: {字号['大标题']}px; font-weight: bold; color: {色['字']}; }}
