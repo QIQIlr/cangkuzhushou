@@ -11,7 +11,7 @@
 import html
 import os
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout,
                                QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSplitter,
@@ -396,7 +396,7 @@ def _数量内容(项, 状态栏):
 
 # ---------------- 样子 B：区域和单号 ----------------
 class 单号列表(QListWidget):
-    """单号排成几列、等宽字；双击复制一个，多选后 Ctrl+C 复制选中的（每行一个）。
+    """单号排成几列（微软雅黑，和全软件一样）；双击复制一个，多选后 Ctrl+C 复制选中的（每行一个）。
     高度跟着单号多少走，自己不出滚动条（整页只有一个滚动条）。"""
     格宽, 格高 = 210, 32
 
@@ -412,7 +412,7 @@ class 单号列表(QListWidget):
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFont(主题.像素字(主题.字号["行标题"], 族=等宽))
+        self.setFont(主题.像素字(主题.字号["行标题"]))
         self.itemDoubleClicked.connect(lambda 条: self._复制([条]))
 
     def 调高(self):
@@ -551,7 +551,7 @@ class 区域单号页(QWidget):
 # ---------------- 样子 C：任务和面单 ----------------
 def _字段行(x):
     """明细里的一行“字段名 + 内容”（规范 v1.1：字段名 13px 灰、内容 15px 黑，全软件只用这一对；
-    电话、单号、邮编用等宽字，大小相同）。要看的字段内容用橙色，提醒写在下面。"""
+    电话、单号、邮编也用同一种字，v1.3 起不再换等宽字）。要看的字段内容用橙色，提醒写在下面。"""
     w = QWidget()
     w.setMinimumHeight(主题.行高最小)
     层 = QHBoxLayout(w)
@@ -563,7 +563,7 @@ def _字段行(x):
     值层 = QVBoxLayout()
     值层.setSpacing(4)
     颜色值 = 色["注意字"] if x.get("提醒") else 色["弱字"] if x.get("灰") else 色["字"]
-    字族 = f"font-family:'{等宽}';" if x.get("等宽") else ""
+    字族 = ""          # 规范 v1.3：明细里所有内容同一种字体（微软雅黑 UI）、同一字号、同一粗细，不再换等宽字
     值样 = f"font-size:15px; color:{颜色值}; {字族} background:transparent;"
     有预览 = bool(x.get("预览"))
     值 = _标签(x["预览"] if 有预览 else x["值"], 值样)
@@ -617,6 +617,71 @@ def _分组(标题, 项们):
     return 外
 
 
+class 任务清单(QFrame):
+    """转寄退货任务左边的任务小清单（2026-10-25 第二轮：原来用列表控件拼的，第一条下面会露出一条白条）。
+    白色圆角块里一行一个任务：粗体“序号. 类型”、单号、橙色“几处要看”；选中那行浅蓝底；行间细线从文字处开始。
+    用法和列表一样：count()、currentRow()、setCurrentRow(i)、currentRowChanged 信号。"""
+    currentRowChanged = Signal(int)
+
+    def __init__(self, 页们):
+        super().__init__()
+        self.setProperty("card", "1")
+        self.setFixedWidth(220)
+        层 = QVBoxLayout(self)
+        层.setContentsMargins(0, 0, 0, 0)
+        层.setSpacing(0)
+        self.行们 = []
+        self._当前 = -1
+        for i, 页 in enumerate(页们):
+            if i:
+                线外 = QWidget()
+                线层 = QHBoxLayout(线外)
+                线层.setContentsMargins(12, 0, 0, 0)
+                线 = QFrame()
+                线.setObjectName("行线")
+                线.setFixedHeight(1)
+                线层.addWidget(线)
+                线外.setFixedHeight(1)
+                层.addWidget(线外)
+            字 = f"<b>{页['序']}. {_字(页['类型'])}</b><br>"
+            if 页["失败"]:
+                字 += f"<span style='color:{色['坏字']}'>● 没读到</span>"
+            else:
+                字 += f"<span style='color:{色['次字']}'>{_字(页['单号']) or '&nbsp;'}</span>"
+                if 页["要看数"]:
+                    字 += f"<br><span style='color:{色['注意字']}'>● {页['要看数']} 处要看</span>"
+            行 = QLabel(字)
+            行.setWordWrap(True)              # 没有类型的任务（客诉、已回复…）标题长，换行显示，不截断
+            行.setToolTip(页["标题"])
+            行.setCursor(Qt.PointingHandCursor)
+            行.setContentsMargins(12, 10, 12, 10)
+            行.mousePressEvent = lambda _e, n=i: self.setCurrentRow(n)
+            层.addWidget(行)
+            self.行们.append(行)
+        self._上色()
+
+    def count(self):
+        return len(self.行们)
+
+    def currentRow(self):
+        return self._当前
+
+    def setCurrentRow(self, i):
+        if i == self._当前 or not (0 <= i < len(self.行们)):
+            return
+        self._当前 = i
+        self._上色()
+        self.currentRowChanged.emit(i)
+
+    def _上色(self):
+        末 = len(self.行们) - 1
+        for i, 行 in enumerate(self.行们):
+            圆 = ("border-top-left-radius:12px; border-top-right-radius:12px;" if i == 0 else "") + \
+                 ("border-bottom-left-radius:12px; border-bottom-right-radius:12px;" if i == 末 else "")
+            底 = 色["选中"] if i == self._当前 else "transparent"
+            行.setStyleSheet(f"QLabel {{ background:{底}; font-size:{主题.字号['正文']}px; {圆} }}")
+
+
 class 面单页(QWidget):
     """转寄退货任务：左边任务小清单，右边按佐川面单从上往下抄的顺序（分组列表）。
     收件人一块；寄件人和品名一块；参考一块；评论和其他信息平时收起。手写面单用，不做复制按钮。
@@ -631,33 +696,7 @@ class 面单页(QWidget):
         左 = QVBoxLayout()
         左.setSpacing(6)
         左.addWidget(_组名("任务"))
-        self.列表 = QListWidget()
-        self.列表.setObjectName("任务列表")
-        self.列表.setFixedWidth(220)
-        self.列表.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.列表.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        总高 = 4
-        for 页 in self.页们:
-            字 = f"<b>{页['序']}. {_字(页['类型'])}</b><br>"
-            if 页["失败"]:
-                字 += f"<span style='color:{色['坏']}'>● 没读到</span>"
-            else:
-                字 += f"<span style='font-family:{等宽}; color:{色['单号字']}'>{_字(页['单号']) or '&nbsp;'}</span>"
-                if 页["要看数"]:
-                    字 += f"<br><span style='color:{色['注意字']}'>● {页['要看数']} 处要看</span>"
-            牌 = QLabel(字)
-            牌.setWordWrap(True)          # 没有类型的任务（客诉、已回复…）标题长，换行显示，不截断
-            牌.setContentsMargins(12, 8, 12, 8)
-            牌.setStyleSheet(f"font-size:{主题.字号['正文']}px; background:transparent;")
-            牌.setAttribute(Qt.WA_TransparentForMouseEvents)
-            条 = QListWidgetItem()
-            条.setToolTip(页["标题"])
-            高 = 牌.heightForWidth(212) + 4
-            条.setSizeHint(QSize(212, 高))
-            总高 += 高
-            self.列表.addItem(条)
-            self.列表.setItemWidget(条, 牌)
-        self.列表.setFixedHeight(max(总高, 48))
+        self.列表 = 任务清单(self.页们)          # 自己画的清单：每一行的底色、选中、分隔线连成一体，不会露出白条
         self.列表.currentRowChanged.connect(self._显示)
         左.addWidget(self.列表)
         左.addStretch(1)
