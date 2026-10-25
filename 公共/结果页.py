@@ -251,7 +251,7 @@ class 数量表格(QTableWidget):
         for r, 行 in enumerate(行们):
             合计行 = str(行[0]).startswith("**")
             名 = str(行[0]).replace("**", "")
-            是起点 = 起点 and r == 0 and len(行们) > 2 and all(str(v) == "0" for v in 行[1:])
+            是起点 = 起点 and r == 0 and len(行们) > 2 and all(str(v) in ("0", "") for v in 行[1:])   # "" = 补的空区位
             if 是起点:
                 名 += "（这天及以前都是 0）"
             今天 = "（今天）" in 名
@@ -281,40 +281,42 @@ class 数量表格(QTableWidget):
             self._自然列 = [max(a, b) for a, b in zip(self._自然列, self._最大列)]
         self.自然宽 = sum(self._自然列) + 2 * self.frameWidth()       # 完整显示需要的最小宽度
         self.自然高 = self.horizontalHeader().height() + sum(self.rowHeight(r) for r in range(len(行们))) + 2 * self.frameWidth()
-        self.拉到(getattr(self, "目标宽", 0), *getattr(self, "_统一", (0, 0)))
+        强制 = getattr(self, "末合计强制", None)
+        self.末合计 = 强制 if 强制 is not None else (len(列名) > 2 and "合计" in str(列名[-1]))
+        self.拉到(getattr(self, "目标宽", 0))
 
-    def 拉到(self, 目标宽, 日期宽=0, 合计宽=0):
-        """自动排版用（2026-10-25 第三轮）：一页里所有表一样宽。
-        日期列统一用 日期宽、合计列统一用 合计宽（靠右，各表对齐）；多出来的宽度平均分给中间各区的列。永远不比完整宽度窄。"""
+    def _基础列(self):
+        列们 = list(self._自然列)
+        统一 = getattr(self, "_统一列", None)
+        if 统一 and len(统一) == len(列们):            # 一页里所有表用同一套列宽（小柒 2026-10-25 补充 2）
+            列们 = [max(a, b) for a, b in zip(列们, 统一)]
+        return 列们
+
+    def 拉到(self, 目标宽, 统一列=None):
+        """自动排版用（2026-10-25 第三轮）：一页里所有表一样宽、各列对齐。
+        每一列取全页同一位置那一列的最大宽度；多出来的宽度平均分给中间各区的列（日期列和合计列不动，各表对齐）。
+        永远不比完整宽度窄。"""
         self.目标宽 = 目标宽
-        self._统一 = (日期宽, 合计宽)
+        if 统一列 is not None:
+            self._统一列 = 统一列
         if not getattr(self, "_自然列", None):
             return
-        列们 = list(self._自然列)
+        列们 = self._基础列()
         n = len(列们)
-        列们[0] = max(列们[0], 日期宽)
-        有合计 = n > 2 and "合计" in (self.horizontalHeaderItem(n - 1).text() if self.horizontalHeaderItem(n - 1) else "")
-        if 有合计:
-            列们[-1] = max(列们[-1], 合计宽)
+        中间 = list(range(1, n - 1)) if self.末合计 and n > 2 else (list(range(1, n)) or [0])
         自然 = sum(列们) + 2 * self.frameWidth()
         多 = max(0, 目标宽 - 自然)
-        中间 = list(range(1, n - 1)) if 有合计 and n > 2 else list(range(1, n)) or [0]
         for i, c in enumerate(中间):
             列们[c] += 多 // len(中间) + (多 % len(中间) if i == 0 else 0)
         for c, w in enumerate(列们):
             self.setColumnWidth(c, w)
         self.setFixedSize(max(自然, 目标宽), self.自然高)
 
-    def 统一前宽(self, 日期宽, 合计宽):
-        """按统一的日期列、合计列宽度算，这张表完整显示要多宽。"""
+    def 统一前宽(self):
+        """按全页统一的列宽算，这张表完整显示要多宽。"""
         if not getattr(self, "_自然列", None):
             return 0
-        列们 = list(self._自然列)
-        n = len(列们)
-        列们[0] = max(列们[0], 日期宽)
-        if n > 2 and self.horizontalHeaderItem(n - 1) and "合计" in self.horizontalHeaderItem(n - 1).text():
-            列们[-1] = max(列们[-1], 合计宽)
-        return sum(列们) + 2 * self.frameWidth()
+        return sum(self._基础列()) + 2 * self.frameWidth()
     def keyPressEvent(self, 事件):
         if 事件.matches(QKeySequence.Copy):
             self.复制()
@@ -362,7 +364,7 @@ class 表块(QWidget):
     """一个仓库（或一个单独的区）的数量表：上面一行“名字 …… 合计 / 合箱拣货 / 单箱拣货”，下面白色圆角块里是表。
     宽度和高度由 表格排列 统一给（同一行的表一样宽、一样高）；表永远不比完整显示需要的宽度窄。"""
 
-    def __init__(self, 表, 状态栏):
+    def __init__(self, 表, 状态栏, 末合计=None):
         super().__init__()
         层 = QVBoxLayout(self)
         层.setContentsMargins(0, 0, 0, 0)
@@ -374,6 +376,7 @@ class 表块(QWidget):
         头.addWidget(名)
         头.addStretch(1)
         self.格 = 数量表格(状态栏)
+        self.格.末合计强制 = 末合计
         self.段钮们 = []
         视图们 = 表["视图们"]
         if len(视图们) > 1:
@@ -405,10 +408,7 @@ class 表块(QWidget):
         self.格.填(视图们[0][1], 视图们[0][2], 表["起点"])
         self.格._自然列 = self.格._最大列 = [max(c) for c in zip(*列们)]   # 每列取各种看法里最宽的，切换时不跳
         self.格.自然宽, self.格.自然高 = max(宽们), max(高们)
-        self.日期宽 = self.格._自然列[0]
-        n = len(self.格._自然列)
-        self.合计宽 = self.格._自然列[-1] if n > 2 else 0
-        self.统一 = (0, 0)
+        self.统一列 = None
         self.格.拉到(0)
         self.卡 = _白块(self.格, 8)
         层.addWidget(self.卡, 0, Qt.AlignLeft | Qt.AlignTop)
@@ -417,13 +417,13 @@ class 表块(QWidget):
 
     def 最小宽(self):
         段宽 = sum(b.width() for b in self.段钮们) + 4 * len(self.段钮们) + 4 if self.段钮们 else 0
-        return max(self.格.统一前宽(*self.统一) + 16, self.名宽 + 12 + 段宽)
+        return max(self.格.统一前宽() + 16, self.名宽 + 12 + 段宽)
 
     def 自然高(self):
         return self.头高 + 6 + self.格.自然高 + 16
 
     def 定大小(self, 宽, 高):
-        self.格.拉到(宽 - 16, *self.统一)
+        self.格.拉到(宽 - 16, self.统一列)
         self.卡.setFixedSize(宽, 高 - self.头高 - 6)
         self.setFixedSize(宽, 高)
 
@@ -445,10 +445,13 @@ class 表格排列(QWidget):
             宽 = max(b.sizeHint().width() for b in 钮们)
             for b in 钮们:
                 b.setFixedWidth(宽)
-        日期宽 = max(块.日期宽 for 块 in 块们)
-        合计宽 = max(块.合计宽 for 块 in 块们)
-        for 块 in 块们:                    # 一页里所有表的日期列一样宽、合计列一样宽（小柒 2026-10-25 补充）
-            块.统一 = (日期宽, 合计宽)
+        # 一页里所有表用同一套列（小柒 2026-10-25 补充 2）：同一位置的列在每张表里一样宽，日期对日期、区对区、合计对合计
+        长们 = {len(块.格._最大列) for 块 in 块们}
+        if len(长们) == 1:
+            统一列 = [max(c) for c in zip(*(块.格._最大列 for 块 in 块们))]
+            for 块 in 块们:
+                块.统一列 = 统一列
+                块.格._统一列 = 统一列
         self._上次宽 = None
         self._排(900)
 
@@ -489,7 +492,29 @@ def _数量内容(项, 状态栏):
                              for 名, 列, 行 in 项.get("表们", []) if 行]
     if not 表们:
         return None
-    return 表格排列([表块(表, 状态栏) for 表 in 表们])
+
+    def 区数(列):
+        合 = len(列) > 2 and "合计" in str(列[-1])
+        return len(列) - 1 - (1 if 合 else 0), 合
+
+    槽 = max(区数(列)[0] for 表 in 表们 for _, 列, _ in 表["视图们"])
+    要合计 = any(区数(列)[1] for 表 in 表们 for _, 列, _ in 表["视图们"])
+
+    def 补(列, 行们):
+        """区少的表：区从左往右排，后面空着的区位补空格，合计放最后一格（小柒 2026-10-25 补充 2）。表里的数字不变。"""
+        n, 合 = 区数(列)
+        空 = 槽 - n
+        if 空 <= 0 and 合 == 要合计:
+            return 列, 行们
+        def 一行(r):
+            r = list(r)
+            头, 区们, 尾 = r[:1], r[1:1 + n], (r[1 + n:] if 合 else [])
+            return 头 + 区们 + [""] * 空 + (尾 if 合 else ([""] if 要合计 else []))
+        return 一行(列), [一行(r) for r in 行们]
+
+    if len(表们) > 1:
+        表们 = [{**表, "视图们": [(名,) + 补(列, 行们) for 名, 列, 行们 in 表["视图们"]]} for 表 in 表们]
+    return 表格排列([表块(表, 状态栏, 要合计 if len(表们) > 1 else None) for 表 in 表们])
 
 # ---------------- 样子 B：区域和单号（无任务包裹，2026-10-25 第三轮整页重做） ----------------
 class 单号格(QLabel):
