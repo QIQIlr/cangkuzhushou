@@ -5,7 +5,7 @@
 import os
 import re
 
-from 公共.错误 import 自动化错误, 需要登录, 页面改版, 网络超时, 环境问题
+from 公共.错误 import 自动化错误, 需要登录, 页面改版, 网络超时, 环境问题, 浏览器被关, 是浏览器被关
 
 WMS首页 = "https://wms-admin.rakufun.jp/#/index"
 专用配置目录 = r"C:\1LR\自动化工作流\浏览器配置"
@@ -75,7 +75,7 @@ def 打开WMS(p, 可见=False, 记录=None, 等待登录=None):
         if not 等待(次数):
             浏览器.close()
             raise 自动化错误(需要登录, "WMS 已掉线，没有完成登录。")
-        if _登录状态(页面) == "已登录":
+        if _登录状态(页面, 登录后=True) == "已登录":
             print("已登录，继续。", flush=True)
             if 记录:
                 记录.写(f"    第{次数}次确认：已登录")
@@ -99,11 +99,15 @@ def 专用窗口开着():
         return True
 
 
-def _登录状态(页面):
-    """打开首页，返回 已登录 / 登录页 / 其他。打不开网页时抛出网络错误。"""
+def _登录状态(页面, 登录后=False):
+    """打开首页，返回 已登录 / 登录页 / 其他。打不开网页时抛出网络错误。
+    登录后=True：是在等人登录之后检查的——这时浏览器没了，几乎都是登录用的 Chrome 窗口被关掉了（体检 2026-10-28）。"""
     try:
         页面.goto(WMS首页, timeout=30000)
     except Exception as e:
+        if 是浏览器被关(e):
+            raise 自动化错误(浏览器被关, "登录用的 Chrome 窗口被关闭了，程序没法继续检查登录。" if 登录后
+                         else "运行用的 Chrome 窗口被关闭了（或浏览器意外退出），程序没法继续。")
         raise 自动化错误(网络超时, "打不开 WMS 网站：" + str(e).splitlines()[0][:200])
     try:
         页面.locator(".el-menu").first.wait_for(timeout=15000)
@@ -136,7 +140,9 @@ def 进入页面(页面, 菜单路径, 等待接口=None):
         try:
             with 页面.expect_response(lambda r: 等待接口 in r.url, timeout=30000):
                 项.click()
-        except Exception:
+        except Exception as e:
+            if 是浏览器被关(e):
+                raise 自动化错误(浏览器被关, "运行用的 Chrome 窗口被关闭了（或浏览器意外退出），程序没法继续。")
             raise 自动化错误(网络超时, f"“{最后一项}”页面 30 秒内没有加载完成。")
     else:
         项.click()

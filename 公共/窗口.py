@@ -376,7 +376,8 @@ class 主窗口(QMainWindow):
 
     def _请登录(self, 次数):
         文字 = (("还没有检测到登录成功，请再试一次。\n\n" if 次数 == 2 else "")
-                + "WMS 已掉线。已经弹出一个 Chrome 窗口，请在里面登录 WMS。\n登录完成后点“我登录好了”。")
+                + "WMS 已掉线。已经弹出一个 Chrome 窗口，请在里面登录 WMS。\n"
+                  "登录完成后不要关闭这个 Chrome 窗口，点“我登录好了”，程序会自动继续。")
         self.登录回答 = 提示框.选择(self, "需要登录 WMS", 文字, [("取消这次运行", "取消"), ("我登录好了", "主")], 默认=1) == 1
         self.登录事件.set()
 
@@ -410,7 +411,9 @@ class 主窗口(QMainWindow):
             提示框.信息(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
             return
         subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
-        提示框.信息(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")
+        提示框.信息(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n"
+                                  "注意：这个 Chrome 开着时不能运行查询。\n"
+                                  "（这是手动登录才要关。运行中掉线时程序自己弹出的 Chrome，登录后不要关。）")
 
     def 更新邮编(self):
         from 公共 import 邮编
