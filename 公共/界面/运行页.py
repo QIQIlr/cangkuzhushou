@@ -93,6 +93,11 @@ class 运行页(QWidget):
         self.百分比.setMinimumWidth(40)
         顶层.addWidget(self.百分比)
         self.进度条.valueChanged.connect(lambda v: self.百分比.setText(f"{round(v / 10)}%"))
+        # 运行中才显示（体检 2026-10-28）：程序已请 Windows 别自动睡眠，但合盖挡不住
+        self.合盖提醒 = 标签("运行中请勿合盖", "说明")
+        self.合盖提醒.setToolTip("运行期间仓库助手已请 Windows 不要自动睡眠、不要自动关屏；合上盖子还是会睡，查询会中断。")
+        顶层.addWidget(self.合盖提醒)
+        self.合盖提醒.setVisible(False)
         # 当前步骤、第几个不再单独占位置：第几个写进左边的字，当前步骤放在鼠标停留提示和“运行过程”里
         self.步骤文字 = QLabel(self)
         self.步骤文字.hide()
@@ -227,6 +232,7 @@ class 运行页(QWidget):
         self.用户点过 = False
         self.本次日志 = None
         self.日志钮.setVisible(False)
+        self.合盖提醒.setVisible(实时)
         self.过程.clear()
         self._准备进度(名列表, 实时)
         self.进度文字.setText("正在打开浏览器 ……")
@@ -291,6 +297,7 @@ class 运行页(QWidget):
     def 全部完成(self, 消息们, 日志文件夹, 有问题数):
         self.本次日志 = 日志文件夹
         self.日志钮.setVisible(bool(日志文件夹))
+        self.合盖提醒.setVisible(False)
         self._计时.stop()
         self._走到(1000)
         self.计数.setText(f"{len(消息们)} / {len(self.名们)}")
@@ -349,6 +356,7 @@ class 运行页(QWidget):
 
     def 出错(self):
         self._计时.stop()                               # 停在当时的位置，不假装走完
+        self.合盖提醒.setVisible(False)
         self.进度文字.setText("运行时出现意外错误（详情在 日志\\窗口错误.txt，请告诉 Claude）")
         self._进度图("错", "坏")
 

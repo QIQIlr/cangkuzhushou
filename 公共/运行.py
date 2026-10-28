@@ -24,7 +24,7 @@ import importlib
 import time
 from datetime import datetime
 
-from 公共 import 模块参数, 查询范围, 飞书
+from 公共 import 模块参数, 查询范围, 防睡眠, 飞书
 from 公共.wms import WMS首页, 打开WMS, 启动浏览器
 from 公共.日志 import 运行记录
 from 公共.错误 import 自动化错误, 归类, 程序出错
@@ -158,11 +158,15 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
     不跑 = {名 for 名, (模块, 参数, _) in 预载.items() if 模块 is not None and 查询范围.没选(参数)}
     要跑 = [x for 名, x in 预载.items() if 名 not in 不跑]
     需要WMS = any(模块 is None or getattr(模块, "网站", "WMS") == "WMS" for 模块, _, _ in 要跑)
+    不睡 = 防睡眠.开始() if 要跑 else None   # 运行期间别让电脑自动睡眠（体检 2026-10-28），最后的 finally 里一定恢复
     try:
         with sync_playwright() as p:
             浏览器 = 页面 = None
             打开失败 = None
             首个记录 = 主控 or 运行记录(名列表[0], 方式, 测试=测试)
+            if 不睡 is not None:
+                首个记录.写("已请 Windows 在运行期间不要自动睡眠、不要自动关屏（合盖仍会睡）" if 不睡
+                          else "没能请 Windows 保持不睡眠（运行照常，请别让电脑睡着）")
             try:
                 if not 要跑:
                     首个记录.写("选的模块都没有勾选查询范围，不打开浏览器")
@@ -225,6 +229,9 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
                 模块, 参数, _ = 载入模块(名)
                 清单.append([名, 模块, 参数, 运行记录(名, 方式, 测试=测试), _失败(模块, e, datetime.now(), 参数), datetime.now()])
                 收尾(*清单[-1])
+    finally:
+        if 不睡 is not None:
+            防睡眠.恢复()
 
 
     if 主控:
