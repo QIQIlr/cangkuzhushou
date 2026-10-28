@@ -583,7 +583,8 @@ class 区域单号页(QWidget):
         for 区, 数, 标 in 总行:
             区名, 数字 = str(区).replace("**", ""), str(数).replace("**", "")
             合计 = str(区).startswith("**")
-            颜色 = 色["坏"] if 数字 == "失败" else 色["灰"] if 数字 == "0" else 色["字"]
+            # “30+” = 有区没查到、至少这么多：橙色（小柒 2026-10-28 确认效果图）
+            颜色 = 色["坏"] if 数字 == "失败" else 色["灰"] if 数字 == "0" else 色["注意"] if 数字.endswith("+") else 色["字"]
             说 = "没查到" if 数字 == "失败" else 数字
             格 = QLabel(f"<span style='color:{色['说明']}; font-size:{主题.字号['说明'] + 1}px'>{_字(区名)}</span><br>"
                        f"<span style='color:{颜色}; font-size:{主题.字号['大数字']}px; font-weight:bold'>{_字(说)}</span>")

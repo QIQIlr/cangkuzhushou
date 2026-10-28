@@ -323,7 +323,7 @@ class 运行页(QWidget):
     def _显示行(self, i, 项):
         条 = self.列表.item(i)
         条.setData(状态角, 项["状态"])
-        条.setData(数字角, 项.get("数量") if 项["状态"] != "失败" else None)
+        条.setData(数字角, 项.get("显示数量", 项.get("数量")) if 项["状态"] != "失败" else None)   # “1933+” = 至少这么多
         条.setData(要看角, 结果页.要看数(项) or (len(结果页.提醒们(项)) if 结果页.提醒们(项) else 0))
         条.setText(项["显示名"])
         self._换详情(i, 结果页.一页(项, self.状态栏, self.手动发送))
