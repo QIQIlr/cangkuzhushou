@@ -18,7 +18,7 @@ from 公共 import 模块参数, 查询范围, 表格
 from 公共.wms import 进入页面
 from 公共.任务查询 import 计数查询器, 查询接口
 from 公共.表单 import 下拉选择, 下拉选项, 填日期, 清空日期
-from 公共.错误 import 自动化错误, 设置有误
+from 公共.错误 import 自动化错误, 设置有误, 立刻停下
 
 最多往前天数 = 60
 对不上时多查天数 = 7
@@ -106,7 +106,10 @@ def 运行(配置, 页面, 记录, 参数=None):
         return 失败结果(配置, e, 开始时间, 参数)
 
     查询器 = 计数查询器(页面, 记录)
+    停下 = False          # WMS 弹出账号/系统提示：后面的区、类都不再查（体检 2026-10-28）
     for 类, 代码 in 配置["类别们"].items():
+        if 停下:
+            break
         类名 = 类 or "全部任务"
         if 类:
             try:
@@ -116,6 +119,7 @@ def 运行(配置, 页面, 记录, 参数=None):
                 错误.append(e)
                 for 区 in 区们:
                     数据[类][区] = "失败"
+                停下 = e.类型 in 立刻停下
                 continue
         for 区 in 区们:
             期望 = {"taskCategories": 代码, "taskStatus": 配置["状态码"], "shelvesRegionNum": 区.replace("区", ""),
@@ -143,10 +147,17 @@ def 运行(配置, 页面, 记录, 参数=None):
             except 自动化错误 as e:
                 数据[类][区] = "失败"
                 错误.append(e)
+                if e.类型 in 立刻停下:
+                    停下 = True
+                    记录.写("    WMS 弹出了提示，按规矩立刻停下，后面的区不再查")
+                    break
                 try:
                     清空日期(页面, 配置["时间框"])
                 except Exception:
                     pass
+    for 类 in 数据:          # 停下时没查的格子记“失败”（不是 0）
+        for 区 in 区们:
+            数据[类].setdefault(区, "失败")
 
     格们 = [v for 类 in 数据 for v in 数据[类].values()]
     失败数 = sum(1 for v in 格们 if v == "失败")

@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from 公共.错误 import 归类
+from 公共.错误 import WMS提示错误, 归类, 立刻停下
 
 根目录 = Path(__file__).resolve().parent.parent
 日志根 = 根目录 / "日志"
@@ -79,6 +79,11 @@ class 运行记录:
             yield
         except Exception as 原始:
             错误 = 归类(原始)
+            if not 错误.步骤 and 错误.类型 not in 立刻停下:
+                # 体检 2026-10-28：WMS 弹出“账号已在其他地方登录!”之类的提示框挡住页面时，照原文报出、立刻停下
+                提示 = self._WMS提示()
+                if 提示:
+                    错误 = WMS提示错误(提示)
             if not 错误.步骤:
                 错误.步骤 = f"{编号} {名称}"
                 self.写(f"    ✘ 失败（{time.time() - t:.1f} 秒）{错误.类型}：{错误.原因}")
@@ -89,6 +94,16 @@ class 运行记录:
             raise 错误 from 原始
         else:
             self.写(f"    ✔ 完成（{time.time() - t:.1f} 秒）")
+
+    def _WMS提示(self):
+        if self.页面 is None:
+            return ""
+        try:
+            from 公共.wms import 读系统提示
+            字 = 读系统提示(self.页面)
+            return 字 if isinstance(字, str) else ""
+        except Exception:
+            return ""
 
     def 保存现场(self, 原始异常):
         """出错时保存：截图、网页快照、技术详情。每个文件单独保护，某个存不了不影响其他。"""

@@ -120,6 +120,26 @@ def _登录状态(页面, 登录后=False):
     return "其他"
 
 
+_读提示JS = """() => {
+  const 看得见 = e => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  for (const 框 of document.querySelectorAll('.el-message-box, .el-message--error, .el-message--warning')) {
+    if (!看得见(框)) continue;
+    const 字 = (框.querySelector('.el-message-box__message, .el-message__content') || 框).innerText.trim();
+    if (字) return 字;
+  }
+  return '';
+}"""
+
+
+def 读系统提示(页面):
+    """WMS 自己弹出的提示框（“系统提示”对话框、顶部提示条）里的文字；没有或读不到返回 ""。只读，不点它。"""
+    try:
+        return 页面.evaluate(_读提示JS) or ""
+    except Exception:
+        return ""
+
+
 def 进入页面(页面, 菜单路径, 等待接口=None):
     """按左侧菜单逐级点击，例如 ["仓库管理", "数据管理", "包裹管理"]。
     等待接口：页面打开时会自动发出的查询请求网址里的一段文字；给了就等它返回。"""
