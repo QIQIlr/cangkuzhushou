@@ -359,6 +359,20 @@ class 运行页(QWidget):
         self.合盖提醒.setVisible(False)
         self.进度文字.setText("运行时出现意外错误（详情在 日志\\窗口错误.txt，请告诉 Claude）")
         self._进度图("错", "坏")
+        # 体检 2026-10-28：没跑完的模块不能还写“正在运行 / 等待”、右边也不能还在“正在运行”
+        停了 = 0
+        for i in range(self.列表.count()):
+            项 = self.列表.item(i)
+            if 项.data(状态角) in ("运行中", "等待"):
+                项.setData(状态角, "已停止")
+                项.setData(数字角, None)
+                self._换详情(i, 空白提示("错", f"{显示名(项.data(Qt.UserRole))} 没有跑完",
+                                       "这次运行意外停止了，这个模块没有结果（不是 0）。到工作台重新运行一次；"
+                                       "反复出现就告诉 Claude（详情在 日志\\窗口错误.txt）。"))
+                停了 += 1
+        self.列表.viewport().update()
+        if 停了:
+            self.眉.setText(f"这次运行意外停止 · {停了} 个模块没跑完")
 
     def _换详情(self, i, 新):
         旧 = self.详情.widget(i)
