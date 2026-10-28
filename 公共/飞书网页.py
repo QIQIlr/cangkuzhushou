@@ -9,7 +9,7 @@
 import re
 import time
 
-from 公共.错误 import 自动化错误, 需要登录飞书, 飞书异常, 网络超时, 页面改版
+from 公共.错误 import 自动化错误, 需要登录飞书, 飞书异常, 网络超时, 页面改版, 归类, 浏览器被关, 网络断开
 
 任务列表网址 = "https://firstjoy.feishu.cn/next/task/my-tasks"
 飞书登录网址 = "https://www.feishu.cn/messenger/"
@@ -118,6 +118,16 @@ def _等(页面, 条件, 秒, 应在网址=任务列表网址):
     return False
 
 
+def _打不开(e, 说):
+    """打不开网页时如实说原因，只用中文；英文原文写进日志（体检 2026-10-28）。"""
+    e2 = 归类(e)
+    if e2.类型 == 浏览器被关:
+        return e2
+    if e2.类型 == 网络断开:
+        return 自动化错误(网络断开, f"{说}：{e2.原因}")
+    return 自动化错误(网络超时, f"{说}（两次各等了 60 秒，网速慢、网络断了或电脑睡着了）。")
+
+
 def 打开列表(页面, 记录=None):
     """用网址打开“我负责的”，等任务行出现（或分组显示 0 条）。慢就再开一次。"""
     for 第几次 in (1, 2):
@@ -125,7 +135,7 @@ def 打开列表(页面, 记录=None):
             页面.goto(任务列表网址, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             if 第几次 == 2:
-                raise 自动化错误(网络超时, "打不开飞书任务页面：" + str(e).splitlines()[0][:150])
+                raise _打不开(e, "打不开飞书任务页面")
             continue
         if _等(页面, lambda: 页面.locator("[role=task-table-row]").count() > 0
                or (页面.evaluate(_分组JS) and all(n == 0 for _, n, _ in 页面.evaluate(_分组JS))), 60):
@@ -188,7 +198,7 @@ def 读任务(页面, 编号, 记录=None):
             页面.goto(网址, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             if 第几次 == 2:
-                raise 自动化错误(网络超时, "打不开这条任务：" + str(e).splitlines()[0][:150])
+                raise _打不开(e, "打不开这条任务")
             continue
         if _等(页面, lambda: 页面.evaluate(_详情JS)["有评论区"], 40):
             页面.wait_for_timeout(1200)

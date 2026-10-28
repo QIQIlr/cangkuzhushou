@@ -5,7 +5,8 @@
 import os
 import re
 
-from 公共.错误 import 自动化错误, 需要登录, 页面改版, 网络超时, 环境问题, 浏览器被关, 是浏览器被关
+from 公共.错误 import (自动化错误, 需要登录, 页面改版, 网络超时, 环境问题, 浏览器被关, 是浏览器被关, 归类,
+                     网络断开, 等不到)
 
 WMS首页 = "https://wms-admin.rakufun.jp/#/index"
 专用配置目录 = r"C:\1LR\自动化工作流\浏览器配置"
@@ -25,7 +26,7 @@ def _启动(p, 可见):
         说明 = str(e)
         if "user data directory is already in use" in 说明 or "ProcessSingleton" in 说明:
             raise 自动化错误(环境问题, "“自动化专用 Chrome”窗口还开着，请先关掉它再运行。")
-        raise 自动化错误(环境问题, "打不开 Chrome：" + 说明.splitlines()[0][:200])
+        raise 自动化错误(环境问题, "打不开 Chrome（英文技术原文写进了这次的日志）。")
     return 浏览器, (浏览器.pages[0] if 浏览器.pages else 浏览器.new_page())
 
 
@@ -108,7 +109,10 @@ def _登录状态(页面, 登录后=False):
         if 是浏览器被关(e):
             raise 自动化错误(浏览器被关, "登录用的 Chrome 窗口被关闭了，程序没法继续检查登录。" if 登录后
                          else "运行用的 Chrome 窗口被关闭了（或浏览器意外退出），程序没法继续。")
-        raise 自动化错误(网络超时, "打不开 WMS 网站：" + str(e).splitlines()[0][:200])
+        e2 = 归类(e)
+        if e2.类型 == 网络断开:
+            raise 自动化错误(网络断开, "打不开 WMS 网站：" + e2.原因)
+        raise 自动化错误(网络超时, "30 秒内打不开 WMS 首页（网速慢、网络断了或电脑睡着了）。")
     try:
         页面.locator(".el-menu").first.wait_for(timeout=15000)
     except Exception:
@@ -161,8 +165,9 @@ def 进入页面(页面, 菜单路径, 等待接口=None):
             with 页面.expect_response(lambda r: 等待接口 in r.url, timeout=30000):
                 项.click()
         except Exception as e:
-            if 是浏览器被关(e):
-                raise 自动化错误(浏览器被关, "运行用的 Chrome 窗口被关闭了（或浏览器意外退出），程序没法继续。")
+            e2 = 归类(e)
+            if e2.类型 in (浏览器被关, 网络断开, 等不到):   # 点菜单本身就点不动 / 断网：如实报（体检 2026-10-28）
+                raise e2
             raise 自动化错误(网络超时, f"“{最后一项}”页面 30 秒内没有加载完成。")
     else:
         项.click()

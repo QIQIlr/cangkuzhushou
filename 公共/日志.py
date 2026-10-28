@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from 公共.错误 import WMS提示错误, 归类, 立刻停下
+from 公共.错误 import WMS提示错误, 归类, 技术原文, 立刻停下, 自动化错误
 
 根目录 = Path(__file__).resolve().parent.parent
 日志根 = 根目录 / "日志"
@@ -87,6 +87,9 @@ class 运行记录:
             if not 错误.步骤:
                 错误.步骤 = f"{编号} {名称}"
                 self.写(f"    ✘ 失败（{time.time() - t:.1f} 秒）{错误.类型}：{错误.原因}")
+                源 = 原始 if not isinstance(原始, 自动化错误) else (原始.__cause__ or 原始.__context__)
+                if 源 is not None:       # 英文技术原文只放日志，界面上只写中文（体检 2026-10-28）
+                    self.写(f"    技术原文：{技术原文(源)}")
                 self.保存现场(原始)
                 self.出错过.append(错误)
             if 错误 is 原始:

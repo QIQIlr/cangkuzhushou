@@ -8,7 +8,7 @@ import re
 import time
 from urllib.parse import parse_qs, urlparse
 
-from 公共.错误 import 自动化错误, 页面改版, 网络超时, 数据不完整, 归类, 是浏览器被关
+from 公共.错误 import 自动化错误, 页面改版, 网络超时, 数据不完整, 归类, 浏览器被关, 网络断开, 等不到
 
 查询接口 = "task/pageV1"
 最小间隔秒 = 1.0
@@ -34,8 +34,9 @@ class 计数查询器:
                 回应 = 等待.value
                 数据 = 回应.json()
             except Exception as e:
-                if 是浏览器被关(e):
-                    raise 归类(e)
+                e2 = 归类(e)
+                if e2.类型 in (浏览器被关, 网络断开, 等不到):   # 如实报（体检 2026-10-28）
+                    raise e2
                 raise 自动化错误(网络超时, "点“查询”后 30 秒内没有拿到结果。")
             finally:
                 self.上次 = time.time()

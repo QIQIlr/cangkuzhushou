@@ -11,6 +11,8 @@
 飞书异常 = "飞书出现异常提示，已停下"
 设置有误 = "模块设置有问题"
 浏览器被关 = "Chrome 被关掉了"
+网络断开 = "网络连接出错"
+等不到 = "页面上等不到要操作的东西"
 账号被挤 = "WMS 账号在别处登录，已停下"
 WMS提示 = "WMS 弹出了提示，已停下"
 # 遇到这几类：整次运行立刻停下（后面的区、后面的模块都不再查），不重试、不绕过（小柒的“严重情况立刻停”规矩）
@@ -27,6 +29,8 @@ WMS提示 = "WMS 弹出了提示，已停下"
     程序出错: "把这条消息和日志文件夹名发给 Claude。",
     设置有误: "到工作台点这个模块，在右边的“查询范围”里重新勾选，再运行。",
     浏览器被关: "重新运行一次；登录后别关这个 Chrome 窗口，点“我登录好了”程序会自动继续。",
+    网络断开: "看看电脑有没有连上网（刚从睡眠醒来时等一会儿），再重新运行一次；连续失败就把日志文件夹名发给 Claude。",
+    等不到: "先重新运行一次（常见原因：电脑睡着了、网速慢、页面被别的窗口挡住）。如果每次都卡在同一步，可能是 WMS 页面改了，把这条消息和日志文件夹名发给 Claude。",
     账号被挤: "确认没有在别处（别的电脑、手机、浏览器）用这个副账号登录 WMS，再重新运行。",
     WMS提示: "先别重试：打开 WMS 看看这条提示是什么意思，处理好再运行；看不懂就把这条消息发给 Claude。",
 }
@@ -66,18 +70,36 @@ class 自动化错误(Exception):
         return " → ".join(部分 + [f"{self.类型}：{self.原因}", f"建议：{self.建议}"])
 
 
+_网络话 = [("ERR_NAME_NOT_RESOLVED", "找不到 WMS 网站的地址（电脑可能没连上网，或刚从睡眠醒来网络还没恢复）"),
+         ("ERR_INTERNET_DISCONNECTED", "电脑没有连上网"),
+         ("ERR_NETWORK_CHANGED", "网络刚刚切换过（例如换了 Wi-Fi）"),
+         ("ERR_CONNECTION_TIMED_OUT", "连接 WMS 超时"), ("ERR_TIMED_OUT", "连接 WMS 超时"),
+         ("ERR_CONNECTION_REFUSED", "WMS 服务器没有回应"), ("ERR_CONNECTION_RESET", "和 WMS 的连接被断开了"),
+         ("ERR_CONNECTION_CLOSED", "和 WMS 的连接被断开了"), ("ERR_ADDRESS_UNREACHABLE", "连不到 WMS 服务器"),
+         ("ERR_PROXY", "代理设置有问题，连不上网")]
+_动作话 = [("Locator.click", "要点的按钮或选项"), ("Locator.hover", "要放鼠标的框"), ("Locator.fill", "要填的框"),
+         ("Locator.wait_for", "要等它出现的内容"), ("Locator.inner", "要读的内容"), ("Locator.input_value", "要读的框")]
+
+
+def 技术原文(异常):
+    """英文技术原文的第一行：只写进日志，不放在界面上（体检 2026-10-28）。"""
+    return f"{type(异常).__name__}: {异常}".splitlines()[0][:300]
+
+
 def 归类(异常):
-    """把 Python / Playwright 的原始报错归到上面几类。"""
+    """把 Python / Playwright 的原始报错归到上面几类，原因只用中文（英文原文见 技术原文()，写进日志）。
+    体检 2026-10-28：以前所有“等元素超时”都说成“页面可能改版”，其实多半是电脑睡着、网速慢或被弹窗挡住。"""
     if isinstance(异常, 自动化错误):
         return 异常
     文字 = f"{type(异常).__name__}: {异常}"
-    首行 = 文字.splitlines()[0][:200]
     if 是浏览器被关(异常):
         return 自动化错误(浏览器被关, "运行用的 Chrome 窗口被关闭了（或浏览器意外退出），程序没法继续。")
     if "net::" in 文字 or "ERR_" in 文字:
-        return 自动化错误(网络超时, "网络连接出错：" + 首行)
+        话 = next((说 for 码, 说 in _网络话 if 码 in 文字), "网络连接出错")
+        return 自动化错误(网络断开, 话 + "。")
     if "Timeout" in type(异常).__name__ or "Timeout" in 文字[:80]:
-        if "locator" in 文字 or "waiting for" in 文字 and "event" not in 文字:
-            return 自动化错误(页面改版, "等了很久也找不到要点的按钮或输入框：" + 首行)
-        return 自动化错误(网络超时, "等待超时：" + 首行)
-    return 自动化错误(程序出错, 首行)
+        if "locator" in 文字 or "Locator." in 文字 or ("waiting for" in 文字 and "event" not in 文字):
+            对象 = next((说 for 码, 说 in _动作话 if 码 in 文字), "要操作的按钮或输入框")
+            return 自动化错误(等不到, f"等了 30 秒，页面上还是等不到{对象}。")
+        return 自动化错误(网络超时, "等 WMS 回应超过了时间（网速慢、网络断了或电脑睡着了）。")
+    return 自动化错误(程序出错, "程序遇到了没预料到的问题（技术原文已写进这次的日志）。")

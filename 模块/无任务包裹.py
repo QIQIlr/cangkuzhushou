@@ -22,7 +22,7 @@ sys.path.insert(0, str(根目录))
 from 公共.wms import 进入页面  # noqa: E402
 from 公共 import 查询范围, 表格, 模块参数  # noqa: E402
 from 公共.表单 import 下拉选择, 清空日期  # noqa: E402
-from 公共.错误 import 自动化错误, 归类, 页面改版, 网络超时, 数据不完整, 设置有误, 浏览器被关, 立刻停下  # noqa: E402
+from 公共.错误 import 自动化错误, 归类, 页面改版, 网络超时, 数据不完整, 设置有误, 浏览器被关, 立刻停下, 网络断开, 等不到  # noqa: E402
 
 模块名 = "无任务包裹"
 查询接口 = "selectAllPage"   # 包裹管理页面查询时，网址里带的这段文字
@@ -42,7 +42,7 @@ def _等查询结果(页面, 动作, 页码=1):
         raise
     except Exception as e:
         错误 = 归类(e)
-        if 错误.类型 in (页面改版, 浏览器被关):
+        if 错误.类型 in (页面改版, 浏览器被关, 网络断开, 等不到):
             raise 错误
         raise 自动化错误(网络超时, "点击后 30 秒内没有拿到查询结果。")
     if not isinstance(数据, dict) or 数据.get("code") != 0 or "data" not in 数据:
