@@ -1,0 +1,552 @@
+# 职责：安全网——每次改完程序跑一遍，确认“没让改的地方没变、各模块算得对、显示得对”（小柒 2026-10-28 定）。
+# 用法（一条命令）：
+#   .venv\Scripts\python.exe 自测\安全网.py              跑全部：回归测试 + 模块检查 + 截图对比
+#   .venv\Scripts\python.exe 自测\安全网.py --更新基准    小柒确认了新样子以后才用：把这次的截图存成新的基准
+# 结果：自测\安全网结果\报告.txt（一句话结论在最上面）；截图在 自测\安全网结果\截图\，有变化的页面的前后对照图在 \对照\。
+# 规则：不连 WMS、不开浏览器、不发飞书；只用临时复制的设置（回归测试.隔离）+ 自测\基准数据\ 里固定的设置和运行记录 + 编造的假数据。
+#   截图里的时间、问候语都固定，所以同样的程序每次截出来一模一样，有差异就是界面真的变了。
+#   截图只用编造的数据（没有真实客户的姓名、地址、电话）；测试数据\ 里的真实数据只用来检查计算，不截图。
+import os
+import shutil
+import subprocess
+import sys
+import time
+import traceback
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+sys.stdout.reconfigure(line_buffering=True)
+if "--工作" not in sys.argv:
+    # 外层：在子进程里做全部检查，再按 报告.txt 的结论给退出码（0 = 全部通过，1 = 有没通过的）。
+    # 原因：Qt 在 Windows 上退出收尾时偶尔会崩一下（0xC0000005），让退出码不可信；检查和报告在那之前都已经做完。
+    _报告 = Path(__file__).resolve().parent / "安全网结果" / "报告.txt"
+    _报告.unlink(missing_ok=True)
+    subprocess.run([sys.executable, "-X", "utf8", __file__, "--工作", *sys.argv[1:]],
+                   env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    _好 = _报告.exists() and "全部通过" in _报告.read_text(encoding="utf-8").splitlines()[0]
+    if not _报告.exists():
+        print("安全网没有跑完（没有生成报告），请看上面的输出。")
+    sys.exit(0 if _好 else 1)
+os.environ["QT_QPA_PLATFORM"] = "windows"          # 真实的 Windows 画法（离屏画法会把按钮画成空白）；窗口不显示在屏幕上
+根目录 = Path(__file__).resolve().parent.parent
+自测 = 根目录 / "自测"
+sys.path.insert(0, str(根目录))
+sys.path.insert(0, str(自测))
+基准数据 = 自测 / "基准数据"
+基准截图 = 自测 / "基准截图"
+结果夹 = 自测 / "安全网结果"
+宽, 窄 = (1600, 900), (1000, 640)
+差异阈值 = 0.001          # 不同的像素超过 0.1% 就算“变了”
+固定时间 = datetime(2026, 10, 28, 18, 0)
+
+记 = []          # (部分, 名, 好, 说明)
+
+
+def 检查(部分, 名, 条件, 说明=""):
+    记.append((部分, 名, bool(条件), str(说明)[:300]))
+    print(("  ✔ " if 条件 else "  ✘ ") + f"[{部分}] {名}" + ("" if 条件 else f"  ← {str(说明)[:200]}"), flush=True)
+
+
+# =================== 1. 原有的回归测试 ===================
+def 跑回归测试():
+    print("① 回归测试（自测\\回归测试.py）")
+    p = subprocess.run([sys.executable, "-X", "utf8", str(自测 / "回归测试.py")], capture_output=True,
+                       cwd=str(根目录), env={**os.environ, "PYTHONIOENCODING": "utf-8", "QT_QPA_PLATFORM": "offscreen"})
+    输出 = p.stdout.decode("utf-8", "replace")
+    坏 = [l.strip() for l in 输出.splitlines() if l.strip().startswith("✘")]
+    好数 = sum(1 for l in 输出.splitlines() if l.strip().startswith("✔"))
+    检查("回归测试", f"{好数} 项通过、{len(坏)} 项没过", not 坏 and 好数 > 0, "；".join(坏[:5]))
+
+
+# =================== 准备：隔离 + 固定数据 ===================
+import 回归测试 as 测  # noqa: E402
+
+前指纹 = 测.指纹()
+测.隔离()
+for 名, 到 in (("模块参数.json", 测.模块参数.参数文件), ("模块设置.txt", 测.模块设置.设置文件), ("运行总表.csv", 测.日志.总表)):
+    if (基准数据 / 名).exists():
+        shutil.copyfile(基准数据 / 名, 到)
+app = 测.应用()
+
+from PySide6.QtCore import QRect, Qt, QTimer  # noqa: E402
+from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
+from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QPushButton, QStatusBar, QTableWidget, QWidget  # noqa: E402
+
+from 公共 import 待处理, 结果页, 窗口, 飞书, 邮编  # noqa: E402
+from 公共.错误 import 自动化错误, 网络超时, 等不到  # noqa: E402
+from 公共.界面 import 提示, 工作台 as 台  # noqa: E402
+import importlib  # noqa: E402
+
+
+class _固定时间(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return 固定时间
+
+
+台.datetime = _固定时间                 # 问候语、日期固定
+飞书.可以发送 = lambda: True
+邮编.数据日期 = lambda: date(2026, 10, 24)
+窗口.日志根 = 测.日志.日志根
+窗口.专用窗口开着 = lambda: False
+d = 固定时间.date()
+
+
+def 等(秒=0.2):
+    t = time.time()
+    while time.time() - t < 秒:
+        app.processEvents()
+        time.sleep(0.01)
+
+
+# =================== 假数据 ===================
+def 回(全部, 列):
+    """列 = [今天, 昨天, …]"""
+    天 = {d - timedelta(days=k): v for k, v in enumerate(列)}
+    return {"全部": 全部, "天": 天, "起点": d - timedelta(days=len(列) - 1), "对上": sum(列) == 全部, "差": 全部 - sum(列)}
+
+
+def 错(类型, 原因, 步骤):
+    e = 自动化错误(类型, 原因)
+    e.步骤 = 步骤
+    return e
+
+
+def 待处理结果(配置, 种):
+    """种：成功 / 无数据 / 不完整 / 失败 / 区很多"""
+    类们 = list(配置["类别们"])
+    组们 = [("瑞江仓库", ["D区", "E区"])]
+    if 种 == "区很多":
+        组们 = [("瑞江仓库", ["D区", "E区"]), ("松户仓库", ["A区", "C区", "F区"]), ("B区", ["B区"])]
+    区们 = [区 for _, 区们 in 组们 for 区 in 区们]
+    样 = {"D区": [5, 30, 25, 0], "E区": [8, 20, 0], "A区": [2, 5, 0], "C区": [33, 100, 100, 0], "F区": [1, 0], "B区": [0, 0]}
+    数据, 错误们 = {}, []
+    for i, 类 in enumerate(类们):
+        数据[类] = {}
+        for 区 in 区们:
+            列 = [0, 0] if 种 == "无数据" else [v + i for v in 样[区][:-1]] + [0]
+            数据[类][区] = 回(sum(列), 列)
+    if 种 == "不完整":
+        类 = 类们[-1]
+        数据[类]["E区"] = "失败"
+        错误们.append(错(等不到, "等了 30 秒，页面上还是等不到要点的按钮或选项。", f"第9步 {类 or '全部任务'} E区：查全部总数"))
+    if 种 == "失败":
+        for 类 in 类们:
+            for 区 in 区们:
+                数据[类][区] = "失败"
+        错误们.append(错(网络超时, "“任务管理”页面 30 秒内没有加载完成。", "第2步 进入 仓库管理 → 数据管理 → 任务管理"))
+    格们 = [v for 类 in 数据 for v in 数据[类].values()]
+    失败数 = sum(1 for v in 格们 if v == "失败")
+    状态 = "失败" if 失败数 == len(格们) else ("不完整" if 失败数 else "成功")
+    合计 = sum(v["全部"] for v in 格们 if v != "失败")
+    return {"状态": 状态, "数量": None if 状态 == "失败" else 合计, "开始时间": 固定时间, "组们": 组们, "数据": 数据,
+            "错误信息": "；".join(e.一句话(配置["模块名"]) for e in 错误们), "错误列表": 错误们, "范围提醒": []}
+
+
+def 无任务结果(种):
+    """用 无任务包裹.运行() 本身算状态：只把每个区的查询换成假的。种：成功 / 无数据 / 不完整 / 失败 / 区很多 / 单号很多"""
+    无 = importlib.import_module("模块.无任务包裹")
+    原 = (无.进入页面, 无._等查询结果, 无.下拉选择, 无.清空日期, 无.查询一个区域)
+    数 = {"D区": 23, "E区": 0, "A区": 7, "C区": 0, "F区": 2, "B区": 1}
+    if 种 == "无数据":
+        数 = {k: 0 for k in 数}
+    if 种 == "单号很多":
+        数["D区"] = 600
+
+    def 查(页, 区, 记录=None):
+        if (种 == "不完整" and 区 == "E区") or 种 == "失败":
+            raise 错(网络超时, "点击后 30 秒内没有拿到查询结果。", f"查询 {区}")
+        n = 数[区]
+        return ("成功" if n else "无数据"), n, [f"2610{k % 28 + 1:02d}-{区[0]}{k:05d}" for k in range(n)], ""
+
+    class 假记录:
+        from contextlib import contextmanager
+
+        def 写(self, *_):
+            pass
+
+        @contextmanager
+        def 步骤(self, _):
+            yield
+    无.进入页面 = 无._等查询结果 = 无.下拉选择 = 无.清空日期 = lambda *a, **k: None
+    无.查询一个区域 = 查
+    try:
+        范围 = ["瑞江仓库", "松户仓库", "B区"] if 种 == "区很多" else ["瑞江仓库"]
+        class 假页面:          # 点什么都行，什么都不做（真正的查询已换成上面的 查）
+            def __getattr__(self, _):
+                return self
+
+            def __call__(self, *a, **k):
+                return self
+        r = 无.运行(假页面(), 假记录(), {"查询范围": 范围})
+    finally:
+        无.进入页面, 无._等查询结果, 无.下拉选择, 无.清空日期, 无.查询一个区域 = 原
+    r["开始时间"] = 固定时间
+    return r
+
+
+def _假面单详情():
+    """编造的转寄任务（不是真实客户）：给截图用。"""
+    return [{"标题": "【到付转寄申请】261009-000001 LYF2400001 1.2kg D-01", "评论数": 2, "详情": {
+        "描述行": ["会员标识码：2400001", "入库转运单号：261009-000001", "具体物品及数量明细：茶叶2盒、毛巾1条",
+                 "转寄地址：〒100-0001 東京都千代田区千代田1-1", "收件人：テスト 太郎", "电话：090-0000-0000", "寄件人：测试 寄件人"],
+        "评论": [{"人": "同事A", "时间": "昨天 17:49", "文": "到付转寄OK", "图": 0},
+                 {"人": "同事B", "时间": "今天 09:10", "文": "已打包", "图": 0}]}},
+        {"标题": "【退货申请】261008-000002 LYF2400002 0.8kg E-03", "评论数": 0, "详情": {
+            "描述行": ["会员标识码：2400002", "入库转运单号：261008-000002", "退货地址：〒530-0001 大阪府大阪市北区梅田1-1",
+                     "退货收件人：テスト 花子", "电话：06-0000-0000", "具体物品及数量明细：衣服1件"], "评论": []}}]
+
+
+def 转寄结果(种, 用真实测试数据=False):
+    飞 = importlib.import_module("模块.飞书任务明细")
+    表, 内容物行 = 飞.读对照表()
+    if 用真实测试数据:
+        import json
+        原们 = json.loads((根目录 / "测试数据" / "飞书普查_2026-10-24_详情.json").read_text(encoding="utf-8"))
+        源 = []
+        for x in 原们:
+            评论 = [{"人": c["头"][0], "时间": c["头"][1], "文": c["文"], "图": c.get("图", 0)} for c in x.get("评论", [])]
+            源.append({"标题": x["标题"], "评论数": len(评论), "详情": {**x, "评论": 评论}})
+    else:
+        源 = _假面单详情()
+    任务们 = [飞.整理任务(s["标题"], s["评论数"], s["详情"], 表, 内容物行) for s in 源]
+    错误们 = []
+    if 种 in ("不完整", "失败"):
+        e = 错(网络超时, "打不开这条任务（两次各等了 60 秒）。", "读第 1 条")
+        错误们.append(e)
+        坏 = {"标题": 源[0]["标题"], "读取": "失败", "错误": e.一句话("飞书任务明细"), "提醒": []}
+        任务们 = [坏] + 任务们[1:] if 种 == "不完整" else [坏]
+    if 种 == "无数据":
+        任务们 = []
+    成功数 = sum(1 for t in 任务们 if t.get("读取") == "成功")
+    状态 = {"无数据": "无数据", "失败": "失败", "不完整": "不完整"}.get(种, "成功")
+    return {"状态": 状态, "数量": 成功数, "开始时间": 固定时间, "任务们": 任务们, "列表提醒": [],
+            "错误信息": "；".join(e.一句话("飞书任务明细") for e in 错误们), "错误列表": 错误们}, len(源)
+
+
+def 成项(名, 显示, 结果, 消息):
+    """和 运行.py 给窗口的“项”一样。"""
+    项 = {"模块": 名, "显示名": 显示, "状态": 结果["状态"], "飞书": ("未发送", "本次选择不发送"), "日志文件夹": "",
+         "数量": 结果.get("数量"), "时间": 结果.get("开始时间"), "附件": None,
+         "错误们": [{"步骤": e.步骤, "原因": f"{e.类型}：{e.原因}", "建议": e.建议} for e in 结果.get("错误列表", [])]}
+    for k, v in 消息.items():
+        项.setdefault(k, v)
+    项["附件"] = None
+    return 项
+
+
+def 消息(名, 结果):
+    m = importlib.import_module(f"模块.{名}")
+    return m.组成消息(结果, "安全网", 用时=1)[0]
+
+
+# =================== 2. 模块检查 ===================
+def 横滚(w):
+    return [type(x).__name__ for x in w.findChildren(QAbstractScrollArea) if x.isVisible() and x.horizontalScrollBar().maximum() > 0]
+
+
+def 画得出(项, 名):
+    try:
+        页 = 结果页.一页(项, QStatusBar(), lambda *a: None)
+        页.setAttribute(Qt.WA_DontShowOnScreen)
+        页.resize(1000, 700)
+        页.show()
+        等(0.05)
+        滚 = 横滚(页)
+        字 = " ".join(l.text() for l in 页.findChildren(QLabel))
+        页.close()
+        return (not 滚), 字, 滚
+    except Exception:
+        return False, "", traceback.format_exc()
+
+
+def 模块检查():
+    print("② 模块检查（假数据 + 测试数据，结果计算和显示）")
+    # —— 待处理三模块的“往前查”规则 ——
+    def 回查(天表, 全部):
+        查过 = []
+        r = 待处理.回查(lambda 日: (查过.append(日), 天表.get((d - 日).days, 0))[1], lambda: 全部, d)
+        return r, 查过
+    r, _ = 回查({0: 5, 1: 3, 2: 0}, 8)
+    检查("往前查", "查到 0 且对上总数就停，起点是那个 0 日", r["对上"] and r["起点"] == d - timedelta(days=2), r)
+    r, _ = 回查({0: 5, 1: 0, 2: 3, 3: 0}, 8)
+    检查("往前查", "中间空一天：继续往前，直到对上", r["对上"] and r["起点"] == d - timedelta(days=3), r)
+    r, 查过 = 回查({0: 5, 1: 0}, 9)
+    检查("往前查", "7 天内对不上：停下并标出还差几条（最多再往前查 7 天）",
+         not r["对上"] and r["差"] == 4 and len(set(查过)) <= 9, (r["对上"], r["差"], len(set(查过))))
+
+    for 名 in ("待审核", "待拣货", "待增值"):
+        配置 = importlib.import_module(f"模块.{名}").配置
+        for 种 in ("成功", "无数据", "不完整", "失败", "区很多"):
+            结果 = 待处理结果(配置, 种)
+            m = 消息(名, 结果)
+            项 = 成项(名, 名, 结果, m)
+            好, 字, 说 = 画得出(项, 名)
+            检查(名, f"{种}：结果页画得出来、没有左右滚动", 好, 说)
+            合计们 = [str(v[2][-1][-1]).replace("**", "") for 表 in m["数量表们"] for v in 表["视图们"][:1]]
+            if 种 == "成功":
+                检查(名, "成功：状态成功，合计 = 各区之和，结论写了数字",
+                     结果["状态"] == "成功" and 合计们 == [str(结果["数量"])] and str(结果["数量"]) in m["结论"], (合计们, m["结论"]))
+            elif 种 == "无数据":
+                检查(名, "全是 0：合计 0，结论写“0 单”（查到了，确实没有）", 合计们 == ["0"] and "0 单" in m["结论"], (合计们, m["结论"]))
+            elif 种 == "不完整":
+                检查(名, "一格没查到：状态不完整，合计写“N+”，结论写哪一格没查到（不是 0），左边数字带 +",
+                     结果["状态"] == "不完整" and 合计们[0].endswith("+") and "E区 没查到（不是 0）" in m["结论"]
+                     and m.get("显示数量", "").endswith("+"), (合计们, m["结论"], m.get("显示数量")))
+                检查(名, "一格没查到：飞书卡片照旧（那格写“失败”，不写 0）", "失败" in str(m["卡片们"]), "")
+            elif 种 == "失败":
+                检查(名, "全没查到：状态失败，数量不是 0，结论写“不是 0”",
+                     结果["状态"] == "失败" and 结果["数量"] is None and "不是 0" in m["结论"] and "0 单" not in m["结论"], m["结论"])
+            elif 种 == "区很多":
+                检查(名, "区很多（瑞江 + 松户 + B区）：三张表、三张卡片", len(m["数量表们"]) == 3 and len(m["卡片们"]) == 3,
+                     (len(m["数量表们"]), len(m["卡片们"])))
+
+    for 种 in ("成功", "无数据", "不完整", "失败", "区很多", "单号很多"):
+        结果 = 无任务结果(种)
+        m = 消息("无任务包裹", 结果)
+        项 = 成项("无任务包裹", "无任务包裹", 结果, m)
+        好, 字, 说 = 画得出(项, 种)
+        检查("无任务包裹", f"{种}：结果页画得出来、没有左右滚动", 好, 说)
+        单号数 = sum(len(x[1]) for x in m["分组"]["明细"])
+        if 种 == "成功":
+            检查("无任务包裹", "成功：D区 23 个，合计 23", 结果["状态"] == "成功" and 结果["数量"] == 23 and 单号数 == 23, (结果["状态"], 结果["数量"]))
+        elif 种 == "无数据":
+            检查("无任务包裹", "全是 0：状态无数据，数量 0", 结果["状态"] == "无数据" and 结果["数量"] == 0, 结果["状态"])
+        elif 种 == "不完整":
+            检查("无任务包裹", "一个区没查到：状态不完整，查到的单号照常显示，合计“N+”，结论写“没查到（不是 0）”",
+                 结果["状态"] == "不完整" and 单号数 == 23 and m["分组"]["总览"][1][-1][1] == "**23+**"
+                 and "E区 没查到（不是 0）" in m["结论"] and m.get("显示数量") == "23+", (结果["状态"], m["结论"]))
+        elif 种 == "失败":
+            检查("无任务包裹", "全没查到：状态失败，数量不是 0", 结果["状态"] == "失败" and 结果["数量"] is None and "不是 0" in m["结论"], m["结论"])
+        elif 种 == "区很多":
+            检查("无任务包裹", "区很多：6 个区都在总览里，合计 = 各区之和",
+                 len(m["分组"]["总览"][1]) == 7 and 结果["数量"] == 33, (len(m["分组"]["总览"][1]), 结果["数量"]))
+        elif 种 == "单号很多":
+            全在 = all(f"2610{k % 28 + 1:02d}-D{k:05d}" in m["文字"] for k in range(600))
+            检查("无任务包裹", "单号很多（600 个）：一个不丢（飞书文字里都有），窗口全显示", 单号数 == 600 and 全在, 单号数)
+
+    for 种 in ("成功", "无数据", "不完整", "失败"):
+        结果, 共 = 转寄结果(种)
+        m = 消息("飞书任务明细", 结果)
+        项 = 成项("飞书任务明细", "转寄退货任务", 结果, m)
+        好, 字, 说 = 画得出(项, 种)
+        检查("转寄退货任务", f"{种}：结果页画得出来、没有左右滚动", 好, 说)
+        检查("转寄退货任务", f"{种}：面单条数和任务数一致、只在窗口看（不发飞书）",
+             len(m.get("面单") or []) == len(结果["任务们"]) and m.get("不发飞书"), (len(m.get("面单") or []), len(结果["任务们"])))
+    try:
+        结果, 共 = 转寄结果("成功", 用真实测试数据=True)
+        m = 消息("飞书任务明细", 结果)
+        检查("转寄退货任务", f"测试数据\\ 里 {共} 条真实任务：全部整理成功、面单条数对", 结果["数量"] == 共 and len(m["面单"]) == 共,
+             (结果["数量"], 共))
+    except FileNotFoundError:
+        检查("转寄退货任务", "测试数据\\ 不在：跳过真实数据检查", True)
+
+
+# =================== 3. 截图 ===================
+def 截图场景():
+    """[(名字, 准备动作)]：每个页面、每种结果、每个能打开的弹窗。"""
+    审配 = importlib.import_module("模块.待审核").配置
+    拣配 = importlib.import_module("模块.待拣货").配置
+    增配 = importlib.import_module("模块.待增值").配置
+    项们 = []
+    for 名, 配, 种 in (("待审核", 审配, "成功"), ("待拣货", 拣配, "不完整"), ("待增值", 增配, "失败"), ("待审核", 审配, "区很多")):
+        r = 待处理结果(配, 种)
+        项们.append((f"结果_{名}_{种}", 成项(名, 名, r, 消息(名, r))))
+    for 种 in ("成功", "无数据", "不完整", "单号很多"):
+        r = 无任务结果(种)
+        项们.append((f"结果_无任务包裹_{种}", 成项("无任务包裹", "无任务包裹", r, 消息("无任务包裹", r))))
+    r, _ = 转寄结果("成功")
+    项们.append(("结果_转寄退货任务_成功", 成项("飞书任务明细", "转寄退货任务", r, 消息("飞书任务明细", r))))
+    return 项们
+
+
+def 截全部(到):
+    到.mkdir(parents=True, exist_ok=True)
+    for f in 到.glob("*.png"):
+        f.unlink()
+    w = 窗口.主窗口()
+    w.setAttribute(Qt.WA_DontShowOnScreen)
+    w.resize(*宽)
+    w.show()
+    等(0.4)
+    张们 = []
+
+    def 截(名):
+        for 标, 尺 in (("宽", 宽), ("窄", 窄)):
+            w.resize(*尺)
+            等(0.35)
+            p = 到 / f"{名}_{标}.png"
+            w.grab().save(str(p))
+            张们.append(p.name)
+            滚 = 横滚(w)
+            检查("截图", f"{名}_{标}：没有左右滚动", not 滚, 滚)
+
+    def 弹窗截(名, 打开):
+        def 截了关():
+            截(名)
+            for x in w.findChildren(提示.窗内弹窗):
+                if x.isVisible():
+                    x.reject()
+        QTimer.singleShot(400, 截了关)
+        打开()
+        等(0.2)
+
+    w.去(0)
+    截("01_工作台")
+    名们 = [w.工作台.列表.item(i).data(Qt.UserRole) for i in range(w.工作台.列表.count())]
+    if "待审核" in 名们:
+        w.工作台.列表.setCurrentRow(名们.index("待审核"))
+        截("02_工作台_选中待审核")
+    w.工作台.列表.setCurrentRow(-1)
+    w.去(1)
+    截("03_运行结果_还没运行")
+    场景 = 截图场景()
+    w._显示结果([项 for _, 项 in 场景])
+    等(0.6)
+    for i, (名, _) in enumerate(场景):
+        w.运行页.列表.setCurrentRow(i)
+        截(f"04_{i + 1:02d}_{名}")
+    w.去(2)
+    截("05_运行记录")
+    w.去(3)
+    截("06_设置")
+    w.去(4)
+    截("07_界面样板")
+    w.去(0)
+    弹窗截("08_弹窗_需要登录WMS", lambda: w._请登录(1))
+    原读 = 飞书.读设置
+    飞书.读设置 = lambda: {}
+    弹窗截("09_弹窗_设置飞书", lambda: 窗口.飞书设置窗口(w).exec())
+    飞书.读设置 = 原读
+    清单 = {"行们": [(str(i), f"【到付转寄申请】2610{i:02d}-00000{i}  测试任务 {i}", 0) for i in range(1, 13)], "应有": 12,
+          "分组": "", "筛选": "未完成", "提醒": []}
+    弹窗截("10_弹窗_选择转寄任务", lambda: 窗口.任务选择窗口(w, 清单).exec())
+    w.运行中 = True
+    弹窗截("11_弹窗_运行中关闭", lambda: w.close())
+    w.运行中 = False
+    弹窗截("12_弹窗_没有模块", lambda: w.开始运行([]))
+    w.close()
+    return 张们
+
+
+# =================== 4. 对比 ===================
+_表 = bytes(0 if i <= 24 else 1 for i in range(256))
+
+
+def 比较(基准, 现在, 对照到):
+    A, B = QImage(str(基准)), QImage(str(现在))
+    if A.size() != B.size():
+        _对照图(A, B, None, 对照到, "大小变了")
+        return 1.0
+    A = A.convertToFormat(QImage.Format_RGB32)
+    B = B.convertToFormat(QImage.Format_RGB32)
+    D = QImage(A)
+    p = QPainter(D)
+    p.setCompositionMode(QPainter.CompositionMode_Difference)
+    p.drawImage(0, 0, B)
+    p.end()
+    G = D.convertToFormat(QImage.Format_Grayscale8)
+    数 = 0
+    for y in range(G.height()):          # 一行一行数（跳过每行末尾补齐的字节）
+        行 = bytes(G.constScanLine(y))[:G.width()]
+        数 += 行.translate(_表).count(1)
+    比 = 数 / max(1, G.width() * G.height())
+    if 比 > 差异阈值:
+        _对照图(A, B, D, 对照到, f"{比:.2%} 的像素不同")
+    return 比
+
+
+def _对照图(A, B, D, 到, 说):
+    s = 0.5
+    a = A.scaled(int(A.width() * s), int(A.height() * s), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    b = B.scaled(int(B.width() * s), int(B.height() * s), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    图们 = [("基准（小柒认可的样子）", a), ("现在", b)]
+    if D is not None:
+        亮 = D.scaled(a.width(), a.height(), Qt.KeepAspectRatio, Qt.FastTransformation)
+        p = QPainter(亮)                       # 差异放大：不同的地方变成亮红色
+        p.setCompositionMode(QPainter.CompositionMode_Screen)
+        p.drawImage(0, 0, 亮)
+        p.drawImage(0, 0, 亮)
+        p.end()
+        图们.append(("不同的地方（亮的）", 亮))
+    高 = max(x.height() for _, x in 图们) + 40
+    总 = QImage(sum(x.width() for _, x in 图们) + 20 * (len(图们) - 1), 高, QImage.Format_RGB32)
+    总.fill(QColor("#F2F2F7"))
+    p = QPainter(总)
+    p.setFont(QFont("Microsoft YaHei UI", 12))
+    x = 0
+    for 题, 图 in 图们:
+        p.drawText(QRect(x, 4, 图.width(), 30), Qt.AlignLeft | Qt.AlignVCenter, f"{题}　{说 if 题 == '现在' else ''}")
+        p.drawImage(x, 40, 图)
+        x += 图.width() + 20
+    p.end()
+    到.parent.mkdir(parents=True, exist_ok=True)
+    总.save(str(到))
+
+
+def 对比(张们, 截图夹):
+    print("④ 和基准截图比较")
+    对照夹 = 结果夹 / "对照"
+    shutil.rmtree(对照夹, ignore_errors=True)
+    变了, 新的 = [], []
+    for 名 in 张们:
+        基 = 基准截图 / 名
+        if not 基.exists():
+            新的.append(名)
+            continue
+        比 = 比较(基, 截图夹 / 名, 对照夹 / 名)
+        if 比 > 差异阈值:
+            变了.append(f"{名}（{比:.2%}）")
+    少了 = sorted(p.name for p in 基准截图.glob("*.png") if p.name not in 张们)
+    检查("截图对比", f"{len(张们)} 张和基准一样", not 变了, "有变化：" + "、".join(变了))
+    检查("截图对比", "没有基准里有、这次却没截到的页面", not 少了, "、".join(少了))
+    检查("截图对比", "没有基准里还没有的新页面", not 新的, "新页面（小柒确认后用 --更新基准 收进基准）：" + "、".join(新的))
+    return 变了, 新的, 少了
+
+
+# =================== 主程序 ===================
+def main():
+    更新 = "--更新基准" in sys.argv
+    开始 = time.time()
+    结果夹.mkdir(parents=True, exist_ok=True)
+    try:
+        跑回归测试()
+        模块检查()
+        print("③ 截图（宽 1600×900、窄 1000×640）")
+        截图夹 = 结果夹 / "截图"
+        张们 = 截全部(截图夹)
+        if 更新:
+            shutil.rmtree(基准截图, ignore_errors=True)
+            shutil.copytree(截图夹, 基准截图)
+            检查("截图对比", f"已把这次的 {len(张们)} 张截图存成新的基准（--更新基准）", True)
+        elif not 基准截图.exists():
+            检查("截图对比", "还没有基准截图：先让小柒确认现在的样子，再用 --更新基准 建立", False)
+        else:
+            对比(张们, 截图夹)
+    except Exception:
+        检查("安全网", "没有意外出错", False, traceback.format_exc())
+    后 = 测.指纹()
+    检查("安全网", "真实的 模块参数.json、模块设置.txt、运行总表.csv 都没被改", 前指纹 == 后)
+    坏 = [x for x in 记 if not x[2]]
+    结论 = ("全部通过" if not 坏 else f"没通过：{len(坏)} 项") + f"（共 {len(记)} 项，用时 {time.time() - 开始:.0f} 秒）"
+    行们 = [f"安全网 {datetime.now():%Y-%m-%d %H:%M}：{结论}", ""]
+    if 坏:
+        行们.append("没通过的：")
+        行们 += [f"  ✘ [{部}] {名}：{说}" for 部, 名, _, 说 in 坏]
+        行们.append("")
+    行们.append("全部检查：")
+    行们 += [f"  {'✔' if 好 else '✘'} [{部}] {名}" for 部, 名, 好, _ in 记]
+    (结果夹 / "报告.txt").write_text("\n".join(行们), encoding="utf-8")
+    print("\n" + 行们[0])
+    print(f"报告：{结果夹 / '报告.txt'}")
+    shutil.rmtree(测.临时, ignore_errors=True)
+    _结束(0 if not 坏 else 1)
+
+
+def _结束(码):
+    sys.stdout.flush()
+    os._exit(码)
+
+
+if __name__ == "__main__":
+    main()

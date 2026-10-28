@@ -296,7 +296,7 @@ def 测_查询范围界面():
         应藏 = [x for x in 面板.区框 if 查询范围.包含它的仓库(x, [仓 for 仓, f in 面板.仓库框.items() if f.isChecked()])]
         好 = (查询范围.整理(界面)[0] == 存的 and 查询范围.整理(存的) == (存的, []) and sorted(藏) == sorted(应藏)
               and not any(面板.区框[x].isChecked() for x in 藏)
-              and (bool(存的) or "不会跑" in 面板.范围说明.text()))
+              and (bool(存的) or "不会跑" in 面板.区组.脚注.text()))
         return 好, (说明, 界面, 存的, 藏)
 
     for 名 in ("待审核", "待拣货", "待增值", "无任务包裹"):
@@ -326,8 +326,8 @@ def 测_查询范围界面():
             if 框.isChecked() and not 框.isHidden():
                 点(x)
         存的 = 模块参数.读取(名)["查询范围"]
-        检查(f"{名}：可以一项都不勾，面板写明不会跑", 存的 == [] and "不会跑" in 面板.范围说明.text()
-             and not 面板.范围说明.isHidden(), (存的, 面板.范围说明.text()))
+        检查(f"{名}：可以一项都不勾，面板写明不会跑", 存的 == [] and "不会跑" in 面板.区组.脚注.text()
+             and not 面板.区组.脚注.isHidden(), (存的, 面板.区组.脚注.text()))
         # 随机点 300 次
         random.seed(名)
         坏 = None
@@ -485,7 +485,7 @@ def 测_飞书开关():
             检查(f"总开关{'开' if 总 else '关'}：转寄退货任务卡片写“只在窗口看”", 标["飞书任务明细"] == "只在窗口看")
             w.列表.setCurrentRow([w.列表.item(i).data(Qt.UserRole) for i in range(w.列表.count())].index("待审核"))
             应用().processEvents()
-            说 = w.面板.飞书说明.text()
+            说 = w.面板.飞书组.脚注.text()
             检查(f"总开关{'开' if 总 else '关'}、模块{'开' if 模 else '关'}：面板说明一致",
                  ("跑完会自动发到飞书群" in 说) == (总 and 模) and (总 or not 模 or "关着" in 说), 说)
             # 拨一下总开关：卡片和说明马上跟着变
