@@ -576,6 +576,9 @@ class 区域单号页(QWidget):
         self.总览格 = QGridLayout(总览块)
         self.总览格.setContentsMargins(8, 8, 8, 8)
         self.总览格.setSpacing(0)
+        self.总览格.setHorizontalSpacing(8)
+        # 各区数量靠左挨着排，多出来的宽度留在右边（以前平分整行，几个数字隔得很远；2026-10-29 界面评审 B3）
+        self.总览格.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.总览项 = []
         _, 总行 = 分组["总览"]
         self.区们 = []
