@@ -28,6 +28,8 @@ from 公共.模块参数 import 显示名
     "待增值": "增值服务的待处理任务，按待增值时间逐日列出",
     "飞书任务明细": "读飞书“我负责的”，勾选后按佐川面单顺序显示，带邮编核对和日语品名参考",
 }
+# 卡片数字后面的单位：和各模块自己结论里的说法一样（待处理三个说“单”，无任务包裹说“个”，转寄退货任务说“条”）；没写的不带单位
+单位表 = {"待审核": "单", "待拣货": "单", "待增值": "单", "无任务包裹": "个", "飞书任务明细": "条"}
 说明角, 范围角, 飞书角, 上次角 = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3, Qt.UserRole + 4
 行高 = 80          # 2026-10-29 界面评审 B1：86 → 80，最小窗口 1000×640 时 5 个模块正好放得下（里面的字整体上移 3px，样子不变）
 
@@ -122,15 +124,23 @@ class 模块卡片画法(QStyledItemDelegate):
         画开关(p, 开关区, 开)
         # 右边：› 和上次结果
         画图标(p, "右", QPointF(r.right() - 20, r.center().y()), 11, 色["灰"])
-        右宽 = 124
+        右宽 = 132
         上次 = 索引.data(上次角)
-        右区 = QRectF(r.right() - 36 - 右宽, r.top() + 11, 右宽, r.height() - 22)
+        右区 = QRectF(r.right() - 36 - 右宽, r.top() + 10, 右宽, r.height() - 20)
         if 上次:
             种 = 状态样子.get(上次["状态"], (上次["状态"], "次", "圆"))[1]
-            数 = 上次["数量"] if 上次["数量"] not in ("", None) else ("—" if 上次["状态"] != "失败" else "没查到")
-            p.setFont(像素字("大数字", 半粗=True))
+            数 = str(上次["数量"] if 上次["数量"] not in ("", None) else ("—" if 上次["状态"] != "失败" else "没查到"))
+            # 数字 26px + 后面 12px 灰色单位（2026-10-29 界面评审 A2）；“—”“没查到”不带单位
+            单位 = 单位表.get(索引.data(Qt.UserRole), "") if 数 not in ("—", "没查到") else ""
+            单位宽 = QFontMetrics(像素字("说明")).horizontalAdvance(单位) + 3 if 单位 else 0
+            数区 = 右区.adjusted(0, 0, 0, -20)
+            p.setFont(像素字("卡片数字", 半粗=True))
             p.setPen(QColor(色["坏"] if 上次["状态"] == "失败" else 色["字"]))
-            p.drawText(右区.adjusted(0, 0, 0, -22), Qt.AlignRight | Qt.AlignVCenter, str(数))
+            p.drawText(数区.adjusted(0, 0, -单位宽, 0), Qt.AlignRight | Qt.AlignVCenter, 数)
+            if 单位:
+                p.setFont(像素字("说明"))
+                p.setPen(QColor(色["弱字"]))
+                p.drawText(数区.adjusted(0, 0, 0, -8), Qt.AlignRight | Qt.AlignBottom, 单位)
             p.setFont(像素字("说明"))
             文 = f"{上次['状态']} · {上次['时间']:%m/%d %H:%M}"
             宽 = QFontMetrics(p.font()).horizontalAdvance(文)
