@@ -71,15 +71,13 @@ def 标签字(项):
 
 def _结论条(项):
     """结果页最上面（规范“结论条”）：第一行 模块名 + 状态（同色淡底）+ 要看几条，右边查询时间；第二行一句话结论。
-    不完整 / 失败时整条用对应状态色的淡底 + 状态色文字。"""
+    不完整 / 失败时结论那句话用状态色，整条不再铺淡底（状态靠角标和这句话的颜色；2026-10-29 界面评审 B2，小柒同意）。"""
     状 = 项["状态"]
     种 = "坏" if 状 == "失败" else "注意" if 状 == "不完整" else None
     条 = QFrame()
-    if 种:
-        条.setStyleSheet(f"QFrame#结论条 {{ background:{色[种 + '底']}; border-radius:12px; }}")
     条.setObjectName("结论条")
     外 = QVBoxLayout(条)
-    外.setContentsMargins(16, 12, 16, 12) if 种 else 外.setContentsMargins(0, 0, 0, 0)
+    外.setContentsMargins(0, 0, 0, 0)
     外.setSpacing(6)
     眉 = QHBoxLayout()
     眉.setSpacing(12)
@@ -111,8 +109,9 @@ def _打开(路径):
         pass
 
 
-def _错误框(错误们, 种, 日志文件夹):
-    """失败（红）或不完整（橙）：每个问题分三行“卡在哪一步 / 原因 / 怎么办”，自动换行。一样的问题只写一次。"""
+def _错误框(错误们, 种, 日志文件夹, 提醒句们=()):
+    """失败（红）或不完整（橙）：每个问题分三行“卡在哪一步 / 原因 / 怎么办”，自动换行。一样的问题只写一次。
+    提醒句们：有出错时，提醒（如“E区 没查到（不是 0）”）并在这一块里、细线下面，不再另起一块（2026-10-29 界面评审 B2）。"""
     框 = QFrame()
     框.setObjectName("坏框" if 种 == "坏" else "注意框")
     层 = QVBoxLayout(框)
@@ -141,6 +140,13 @@ def _错误框(错误们, 种, 日志文件夹):
         层.addLayout(格)
     if len(去重) > 3:
         层.addWidget(_标签(f"还有 {len(去重) - 3} 个别的问题，详细的在日志里。"))
+    if 提醒句们:
+        线 = QFrame()
+        线.setFrameShape(QFrame.HLine)
+        线.setStyleSheet(f"color:{色['坏线' if 种 == '坏' else '注意线']}; background:transparent;")
+        层.addWidget(线)
+        for s in 提醒句们:
+            层.addWidget(_标签("● " + s))
     if 日志文件夹:
         行 = QHBoxLayout()
         钮 = _文字钮("打开这次的日志")
@@ -1026,13 +1032,13 @@ def 一页(项, 状态栏, 发送):
     层.setContentsMargins(24, 20, 24, 16)
     层.setSpacing(16)
     层.addWidget(_结论条(项))
+    句们 = 提醒们(项)
     if 项.get("错误们"):
         错行 = QHBoxLayout()               # 错误块最宽 640、靠左；窄窗口时跟着变窄，字照样换行
-        错行.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹")), 1000)
+        错行.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹"), 句们), 1000)
         错行.addStretch(1)
         层.addLayout(错行)
-    句们 = 提醒们(项)
-    if 句们:
+    elif 句们:                             # 只有提醒、没有出错（如“任务有变动”“对不上”）：照旧单独一块橙色
         层.addWidget(_提醒框(句们))
     内容 = _内容(项, 状态栏)
     if 内容 is not None:
