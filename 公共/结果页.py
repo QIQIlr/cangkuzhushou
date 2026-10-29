@@ -148,6 +148,7 @@ def _错误框(错误们, 种, 日志文件夹):
         行.addWidget(钮)
         行.addStretch(1)
         层.addLayout(行)
+    框.setMaximumWidth(640)        # 一行字太长读不动，宽窗口时右边留白（2026-10-29 界面评审 A4，小柒同意）
     return 框
 
 
@@ -989,7 +990,10 @@ def 一页(项, 状态栏, 发送):
     层.setSpacing(16)
     层.addWidget(_结论条(项))
     if 项.get("错误们"):
-        层.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹")))
+        错行 = QHBoxLayout()               # 错误块最宽 640、靠左；窄窗口时跟着变窄，字照样换行
+        错行.addWidget(_错误框(项["错误们"], "坏" if 项["状态"] == "失败" else "注意", 项.get("日志文件夹")), 1000)
+        错行.addStretch(1)
+        层.addLayout(错行)
     句们 = 提醒们(项)
     if 句们:
         层.addWidget(_提醒框(句们))
