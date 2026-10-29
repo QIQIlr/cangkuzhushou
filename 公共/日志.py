@@ -1,10 +1,10 @@
 # 职责：每次运行的日志。所有模块共用。
 # 每次运行在 日志\ 下建一个文件夹：YYYY-MM-DD_HHMMSS_模块名\（用窗口里改过的名字；改过名时运行记录里另记原名）
 #   运行记录.txt   中文逐步记录 + 结尾结论
-#   截图.png / 网页快照.html / 技术详情.txt   只在出错时保存，给 AI 定位问题用
+#   截图.png / 网页快照.html / 技术详情.txt   只在出错时保存，给 AI 定位问题用（网页快照只在“任务管理”这类只有数字的页面存）
 #   发送内容.txt   飞书消息原文和发送结果
 # 另有 日志\运行总表.csv：每次运行一行（Excel 可直接打开）。最后一列“测试”= Claude 自测的运行（2026-10-24 起才有这一列）。
-# 安全：写入前会把 Webhook 地址、cookie、token 之类的内容遮掉。日志保留 90 天。
+# 安全：写入前会把 Webhook 地址、cookie、token、转运单号、电话号码之类的内容遮掉。日志保留 90 天。
 import csv
 import platform
 import re
@@ -26,7 +26,20 @@ from 公共.错误 import WMS提示错误, 归类, 技术原文, 立刻停下, �
 _敏感 = [
     (re.compile(r"https://open\.(feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/[\w-]+"), "[飞书Webhook已隐藏]"),
     (re.compile(r"(?i)(cookie|token|authorization|password|密码)(\s*[:=]\s*)\S+"), r"\1\2[已隐藏]"),
+    # 2026-10-29：转运单号（例如 261012-001766，只留前面的日期部分）、电话号码（日本、中国）
+    (re.compile(r"(?<![\d-])(\d{6})-\d{5,6}(?![\d-])"), r"\1-******"),
+    (re.compile(r"(?<![\d-])0\d{1,4}-\d{1,4}-\d{3,4}(?![\d-])"), "[电话已隐藏]"),
+    (re.compile(r"\+81[\d\- ]{9,13}\d"), "[电话已隐藏]"),
+    (re.compile(r"(?<!\d)(0[5789]0\d{8}|1[3-9]\d{9})(?!\d)"), "[电话已隐藏]"),
 ]
+
+# 出错时只有这些页面才存“网页快照”（整页网页）：只有数字、没有客户信息（2026-10-29）。
+# 包裹列表、转寄 / 飞书等可能有客户姓名、地址、电话的页面只存截图。
+可存快照的网址 = ("/data-management/taskManager",)
+
+
+def 可以存快照(网址):
+    return any(x in (网址 or "") for x in 可存快照的网址)
 
 
 def 遮掩(文字):
@@ -118,10 +131,13 @@ class 运行记录:
                 self.页面.screenshot(path=str(self.文件夹 / f"截图{后缀}.png"), full_page=True)
             except Exception:
                 pass
-            try:
-                (self.文件夹 / f"网页快照{后缀}.html").write_text(遮掩(self.页面.content()), encoding="utf-8")
-            except Exception:
-                pass
+            if 可以存快照(网址):
+                try:
+                    (self.文件夹 / f"网页快照{后缀}.html").write_text(遮掩(self.页面.content()), encoding="utf-8")
+                except Exception:
+                    pass
+            else:
+                self.写("    （这一页可能有客户信息，只存截图、不存网页快照）")
         try:
             from importlib.metadata import version
             pw版本 = version("playwright")
