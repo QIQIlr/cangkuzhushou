@@ -1,0 +1,11 @@
+# 仓库助手要用的组件和版本（2026-10-29 照 .venv 里 pip freeze 的实际版本写）。
+# Python 3.13.17（在 工具\Python\）。重建方法见 使用说明.txt 第八部分。
+# 浏览器用电脑上装的 Google Chrome（channel="chrome"），不用运行 playwright install。
+et_xmlfile==2.0.0
+greenlet==3.5.6
+openpyxl==3.1.5
+playwright==1.64.0
+pyee==14.0.0
+PySide6_Essentials==6.12.0
+shiboken6==6.12.0
+typing_extensions==4.16.0

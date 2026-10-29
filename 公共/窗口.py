@@ -34,10 +34,9 @@ from 公共.界面.记录页 import 记录页  # noqa: E402
 from 公共.界面.设置页 import 设置页  # noqa: E402
 from 公共.界面.运行页 import 运行页  # noqa: E402
 from 公共.模块参数 import 显示名  # noqa: E402
-from 公共.wms import WMS首页, 专用配置目录, 专用窗口开着  # noqa: E402
+from 公共.wms import WMS首页, 专用配置目录, 专用窗口开着, 找Chrome, 找不到Chrome说明  # noqa: E402
 from 公共.日志 import 日志根, 运行记录  # noqa: E402
 
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 测试不发送 = os.environ.get("仓库助手_测试不发送") == "1"
 
 
@@ -410,10 +409,20 @@ class 主窗口(QMainWindow):
         if 专用窗口开着():
             提示框.信息(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
             return
-        subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", WMS首页])
+        if not self._开专用Chrome(WMS首页):
+            return
         提示框.信息(self, "登录 WMS", "已打开自动化专用 Chrome。\n请在里面登录 WMS（已登录就不用管），然后关掉那个 Chrome 窗口。\n\n"
                                   "注意：这个 Chrome 开着时不能运行查询。\n"
                                   "（这是手动登录才要关。运行中掉线时程序自己弹出的 Chrome，登录后不要关。）")
+
+    def _开专用Chrome(self, 网址):
+        """手动登录用：打开自动化专用 Chrome。找不到 Chrome 时用中文说明原因，不报英文错误。"""
+        路径 = 找Chrome()
+        if not 路径:
+            提示框.警告(self, "找不到 Chrome", 找不到Chrome说明)
+            return False
+        subprocess.Popen([路径, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", 网址])
+        return True
 
     def 更新邮编(self):
         from 公共 import 邮编
@@ -438,7 +447,8 @@ class 主窗口(QMainWindow):
             提示框.信息(self, "已经打开", "自动化专用 Chrome 已经开着了，请在里面登录，然后关掉它。")
             return
         from 公共.飞书网页 import 任务列表网址
-        subprocess.Popen([CHROME, f"--user-data-dir={专用配置目录}", "--no-first-run", "--new-window", 任务列表网址])
+        if not self._开专用Chrome(任务列表网址):
+            return
         提示框.信息(self, "登录飞书", "已打开自动化专用 Chrome，进入飞书“我负责的”任务页。\n"
                                 "如果出现登录页，请扫码或输入账号登录；看到任务列表就说明登录好了。\n"
                                 "然后关掉那个 Chrome 窗口。\n\n注意：这个 Chrome 开着时不能运行查询。")

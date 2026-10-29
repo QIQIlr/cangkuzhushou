@@ -4,12 +4,34 @@
 # 说明：不保存、不输入密码。掉线时会请你在弹出的窗口里手动登录。
 import os
 import re
+from pathlib import Path
 
 from 公共.错误 import (自动化错误, 需要登录, 页面改版, 网络超时, 环境问题, 浏览器被关, 是浏览器被关, 归类,
                      网络断开, 等不到)
 
 WMS首页 = "https://wms-admin.rakufun.jp/#/index"
-专用配置目录 = r"C:\1LR\自动化工作流\浏览器配置"
+# 浏览器配置（登录状态）在程序文件夹里，按这个文件的位置推算，换了文件夹也能找到（2026-10-29）
+专用配置目录 = str(Path(__file__).resolve().parent.parent / "浏览器配置")
+找不到Chrome说明 = ("这台电脑上找不到 Google Chrome（常见的几个安装位置都没有）。"
+                "请先安装 Google Chrome（https://www.google.com/chrome/ ），或告诉 Claude 它装在哪里。")
+
+
+def 找Chrome():
+    """Google Chrome 的位置：先看常见安装位置，再看 Windows 记录的安装位置（只读）。找不到返回 None。"""
+    候选 = [os.path.join(os.environ.get(变量, ""), "Google", "Chrome", "Application", "chrome.exe")
+          for 变量 in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA") if os.environ.get(变量)]
+    候选.append(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    try:
+        import winreg
+        for 根 in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(根, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe") as 键:
+                    候选.append(winreg.QueryValue(键, None))
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    return next((p for p in 候选 if p and os.path.isfile(p)), None)
 
 
 def _启动(p, 可见):
@@ -26,6 +48,8 @@ def _启动(p, 可见):
         说明 = str(e)
         if "user data directory is already in use" in 说明 or "ProcessSingleton" in 说明:
             raise 自动化错误(环境问题, "“自动化专用 Chrome”窗口还开着，请先关掉它再运行。")
+        if 找Chrome() is None:
+            raise 自动化错误(环境问题, 找不到Chrome说明)
         raise 自动化错误(环境问题, "打不开 Chrome（英文技术原文写进了这次的日志）。")
     return 浏览器, (浏览器.pages[0] if 浏览器.pages else 浏览器.new_page())
 

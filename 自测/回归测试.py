@@ -1058,7 +1058,29 @@ def 测_运行中关窗口():
         subprocess.run = 原跑
 
 
-部分 = {"运行中关窗口": 测_运行中关窗口, "查询间隔共用": 测_查询间隔共用, "不留客户信息": 测_不留客户信息, "设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
+def 测_路径不写死():
+    print("路径不写死：浏览器配置按程序文件夹推算；Chrome 先找常见位置，找不到用中文说明（2026-10-29）")
+    import os
+    from 公共 import wms
+    检查("浏览器配置 = 程序文件夹\\浏览器配置", Path(wms.专用配置目录) == 根目录 / "浏览器配置", wms.专用配置目录)
+    找到 = wms.找Chrome()
+    检查("这台电脑上找得到 Chrome", 找到 and os.path.isfile(找到), 找到)
+    原 = os.path.isfile
+    os.path.isfile = lambda p: False
+    try:
+        检查("找不到 Chrome 时返回“没有”（不报错）", wms.找Chrome() is None)
+    finally:
+        os.path.isfile = 原
+    检查("找不到时的说明是中文、告诉怎么办", "找不到 Google Chrome" in wms.找不到Chrome说明 and "安装" in wms.找不到Chrome说明)
+    import re as _re
+    要的 = dict(l.split("==") for l in (根目录 / "requirements.txt").read_text(encoding="utf-8").splitlines()
+               if l and not l.startswith("#"))
+    from importlib.metadata import version
+    对不上 = {k: (v, version(k)) for k, v in 要的.items() if version(k) != v}
+    检查("requirements.txt 的版本和 .venv 里装的一样", not 对不上, 对不上)
+
+
+部分 = {"路径不写死": 测_路径不写死, "运行中关窗口": 测_运行中关窗口, "查询间隔共用": 测_查询间隔共用, "不留客户信息": 测_不留客户信息, "设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
       "查询范围规则": 测_查询范围规则, "无任务包裹迁移": 测_无任务包裹迁移, "查询范围界面": 测_查询范围界面,
       "无任务包裹按仓库查": 测_无任务包裹按仓库查, "改名": 测_改名, "飞书开关": 测_飞书开关,
       "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑, "不弹小窗口": 测_不弹小窗口, "卡片原地改名": 测_卡片原地改名}
