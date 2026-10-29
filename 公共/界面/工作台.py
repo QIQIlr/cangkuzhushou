@@ -277,9 +277,9 @@ class 工作台(QWidget):
         self.列表.model().rowsMoved.connect(lambda *_: self.保存模块())
         self.列表.currentItemChanged.connect(self._选中变了)
         模块区.addWidget(self.列表)
+        # 只留一行脚注（2026-10-29 界面评审 A3，小柒同意）：原来第二行“哪些模块会自动发飞书”去掉，
+        # 每个模块发不发写在卡片第三行，总开关的解释在右上角开关的鼠标提示里，当前模块的写在右侧面板。
         模块区.addWidget(标签("拖动调整运行顺序（上面的先跑）；点开关启用或停用；按住 Ctrl 可以选多个。", "脚注", 换行=True))
-        self.飞书总述 = 标签("", "脚注", 换行=True)      # 一句话：这次跑完哪些模块会自动发
-        模块区.addWidget(self.飞书总述)
         左.addLayout(模块区)
         左.addStretch(1)
         中.addLayout(左, 1)
@@ -331,7 +331,6 @@ class 工作台(QWidget):
         self.提醒.setVisible(bool(提醒))
         self._更新数字()
         self.面板.设总开关(self.自动发.isChecked())
-        self._更新飞书总述()
         self._更新注意(清单)
         self._更新页眉()
         self._列表高度()
@@ -382,7 +381,7 @@ class 工作台(QWidget):
                 项.setText(显示名(名))
                 项.setData(范围角, 范围文字(名, self.自动发.isChecked()))
                 项.setToolTip(模块说明(名) + (f"\n原名：{名}" if 显示名(名) != 名 else ""))
-        self._更新飞书总述()
+        self.列表.viewport().update()        # 卡片第三行“跑完自动发飞书 / 不自动发”马上跟着变
 
     def _卡片改名(self, 原名, 新名, 编辑框=None):
         """卡片上原地改名：和右边铅笔改的是同一个名字，检查规则也一样。"""
@@ -395,18 +394,7 @@ class 工作台(QWidget):
             项 = self.列表.item(i)
             项.setData(范围角, 范围文字(项.data(Qt.UserRole), 开))
         self.面板.设总开关(开)
-        self._更新飞书总述()
-
-    def _更新飞书总述(self):
-        会发 = [self.列表.item(i).text() for i in range(self.列表.count())
-              if (self.列表.item(i).data(范围角) or ("", ""))[1] == 自动发字]
-        if not self.自动发.isChecked():
-            字 = "右上角“跑完自动发飞书”关着：跑完哪个模块都不会自动发。想发的时候，在结果下面点“发到飞书”。"
-        elif 会发:
-            字 = "跑完会自动发到飞书群的：" + "、".join(会发) + "。其他模块不自动发。"
-        else:
-            字 = "总开关开着，但没有哪个模块设成“跑完自动发到飞书群”（在右边的模块设置里打开）。"
-        self.飞书总述.setText(字)
+        self.列表.viewport().update()
 
     # ---------- 页眉、数字、需要注意 ----------
     def _更新数字(self):
