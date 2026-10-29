@@ -1026,6 +1026,8 @@ def 测_运行中关窗口():
     关过 = []
     原关 = wms.关掉自动化Chrome
     wms.关掉自动化Chrome = lambda 超时秒=4: (关过.append(超时秒), False)[1]      # 假装超时：不碰真的 Chrome
+    原表 = 日志.总表
+    日志.总表 = 临时 / "关窗测试_运行总表.csv"          # 单独一张表，不影响别的测试
     try:
         w = 窗口.主窗口()
         主控 = 运行记录("主控", "测试", 测试=True)
@@ -1047,6 +1049,7 @@ def 测_运行中关窗口():
     finally:
         wms.关掉自动化Chrome = 原关
         运行记录.本次主控 = 运行记录.正在 = None
+        日志.总表 = 原表
     原跑 = subprocess.run
 
     def 慢(*a, timeout=None, **k):
