@@ -72,7 +72,7 @@ from PySide6.QtCore import QRect, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QPushButton, QStatusBar, QTableWidget, QWidget  # noqa: E402
 
-from 公共 import 待处理, 结果页, 窗口, 飞书, 邮编  # noqa: E402
+from 公共 import 待处理, 结果页, 窗口, 表格, 飞书, 邮编  # noqa: E402
 from 公共.错误 import 自动化错误, 网络超时, 等不到  # noqa: E402
 from 公共.界面 import 提示, 工作台 as 台  # noqa: E402
 import importlib  # noqa: E402
@@ -320,9 +320,15 @@ def 模块检查():
              首行[0] == "10/20 之前（没对上）" and 首行[-1] == 500 - 今天数 and 各行和 == 500 and 合计行[-1] == "**500**", 行们)
         句 = f"瑞江仓库共 500 单" + (f"（今天 {今天数} 单）" if 今天数 else "") + f"，其中 {500 - 今天数} 单没对上日期（早于 10/20）"
         检查("往前查", f"{名}：结论写“{句}”", m["结论"] == 句, m["结论"])
-        卡 = str(m["卡片们"]) + m["文字"]
-        检查("往前查", f"{名}：飞书卡片照旧（不写“不完整”、不加“没对上”一行）",
-             "不完整" not in 卡 and "没对上" not in 卡 and "还有 " + str(500 - 今天数) + " 条对不上" in 卡, "")
+        卡 = m["卡片们"][0]
+        元素 = 卡["body"]["elements"]
+        卡字 = str(卡) + m["文字"]
+        表 = next(e for e in 元素 if e["tag"] == "table")
+        检查("往前查", f"{名}：飞书卡片同窗口（最上面结论、表格首行“没对上”、写“不完整”、橙色、文字版也有）",
+             元素[0] == {"tag": "markdown", "content": f"**{句}**"} and 表["rows"][0]["c0"] == "10/20 之前（没对上）"
+             and 表["rows"][0]["c3"] == str(500 - 今天数) and f"⚠ 状态：不完整（{500 - 今天数} 单没对上日期" in 卡字
+             and 卡["header"]["template"] == "orange" and 句 in m["文字"] and "10/20 之前（没对上）" in m["文字"]
+             and 表格._大小(卡) < 18000, 元素[:2])
         项 = 成项("待审核", "待审核", 结果, m)
         好, 字, 说 = 画得出(项, 名)
         检查("往前查", f"{名}：结果页画得出来、没有左右滚动", 好, 说)
