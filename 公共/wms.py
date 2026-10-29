@@ -88,6 +88,22 @@ def 打开WMS(p, 可见=False, 记录=None, 等待登录=None):
     raise 自动化错误(需要登录, "两次都没有检测到登录成功。")
 
 
+def 关掉自动化Chrome(超时秒=4):
+    """运行中关窗口时用：关掉用“浏览器配置”文件夹的 Chrome（就是程序运行时打开的那个）。
+    只找命令行里带这个文件夹的 chrome.exe，别的 Chrome 不碰。超时就不等了，返回 False（照常退出）。"""
+    import subprocess
+    命令 = ("Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | "
+          "Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:CANGKU_PROFILE) } | "
+          "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", 命令], timeout=超时秒,
+                       env={**os.environ, "CANGKU_PROFILE": 专用配置目录}, capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return True
+    except Exception:
+        return False
+
+
 def 专用窗口开着():
     """专用 Chrome 开着时，它会锁住配置目录里的 lockfile 文件。"""
     锁 = os.path.join(专用配置目录, "lockfile")

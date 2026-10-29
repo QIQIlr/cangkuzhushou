@@ -450,9 +450,27 @@ class 主窗口(QMainWindow):
                               是="关闭", 否="不关", 危险=True):
                 事件.ignore()
                 return
-            _记下窗口错误("用户在运行中关闭了窗口，本次运行被中止。")
-            os._exit(0)
+            self._中止并退出()
         事件.accept()
+
+    def _中止并退出(self, 退出=True):
+        """运行中关窗口（2026-10-29）：先给正在跑的模块在运行总表补一行“被中止”，再尽量关掉运行用的 Chrome
+        （最多等几秒，关不掉也照常退出），最后退出。每一步出错都不挡住退出。"""
+        _记下窗口错误("用户在运行中关闭了窗口，本次运行被中止。")
+        for 记录 in (运行记录.正在, 运行记录.本次主控):
+            try:
+                if 记录 is not None:
+                    记录.中止("运行中关闭窗口")
+            except Exception:
+                _记下窗口错误("补“被中止”记录时出错：\n" + traceback.format_exc())
+        try:
+            from 公共.wms import 关掉自动化Chrome
+            if not 关掉自动化Chrome(超时秒=4):
+                _记下窗口错误("关闭运行用的 Chrome 超时，照常退出。")
+        except Exception:
+            _记下窗口错误("关闭运行用的 Chrome 时出错：\n" + traceback.format_exc())
+        if 退出:
+            os._exit(0)
 
 
 def _记下窗口错误(文字):
