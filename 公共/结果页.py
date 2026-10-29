@@ -14,7 +14,7 @@ import os
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSplitter,
                                QStyledItemDelegate, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from 公共.界面 import 主题  # noqa: E402
@@ -567,6 +567,15 @@ class 区域单号页(QWidget):
         头 = QHBoxLayout()
         头.addWidget(_组名("各区数量"))
         头.addStretch(1)
+        self.搜索 = None
+        if self.明细:              # 找单号（2026-10-29 界面评审 B4）：输入后几位，回车跳到那一格、选中并复制
+            self.搜索 = QLineEdit()
+            self.搜索.setPlaceholderText("找单号：输入后几位，回车")
+            self.搜索.setFixedWidth(220)
+            self.搜索.setClearButtonEnabled(True)
+            self.搜索.returnPressed.connect(self._找单号)
+            self.搜索.textChanged.connect(lambda 字: None if 字 else self._标红(False))
+            头.addWidget(self.搜索)
         if len(self.明细) > 1:
             全 = _小钮("复制全部区")
             全.clicked.connect(lambda: self.复制(None, "已复制全部区的单号", 全))
@@ -676,6 +685,34 @@ class 区域单号页(QWidget):
     def resizeEvent(self, 事件):
         super().resizeEvent(事件)
         self._排(self.width())
+
+    # —— 找单号 ——
+    def _标红(self, 红):
+        self.搜索.setStyleSheet(f"QLineEdit {{ border: 1px solid {色['坏']}; }}" if 红 else "")
+
+    def _找单号(self):
+        """完整单号或后几位：找到就选中那一格、滚过去、复制；这次结果里没有就把框标红（只是这次结果里没有，不代表 WMS 里没有）。"""
+        找 = self.搜索.text().strip().upper()
+        if not 找:
+            return
+        中 = next((g for g in self.格们 if g.号.upper() == 找), None) or \
+            next((g for g in self.格们 if g.号.upper().endswith(找)), None)
+        if 中 is None:
+            self._标红(True)
+            if self.状态栏 is not None:
+                self.状态栏.showMessage(f"这次的结果里没有“{找}”", 4000)
+            return
+        self._标红(False)
+        for g in self.格们:
+            if g is not 中 and g.选中:
+                g.设选中(False)
+        中.设选中(True)
+        滚 = self.parentWidget()
+        while 滚 is not None and not isinstance(滚, QScrollArea):
+            滚 = 滚.parentWidget()
+        if 滚 is not None:
+            滚.ensureWidgetVisible(中, 40, 80)
+        self.复制([中.号], f"已复制 {中.号}")
 
     # —— 选中和复制 ——
     def 点格(self, 格, 多选):
