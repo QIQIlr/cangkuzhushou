@@ -11,7 +11,7 @@
 import html
 import os
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout,
                                QLabel, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QSplitter,
@@ -568,7 +568,7 @@ class 区域单号页(QWidget):
         头.addStretch(1)
         if len(self.明细) > 1:
             全 = _小钮("复制全部区")
-            全.clicked.connect(lambda: self.复制(None, "已复制全部区的单号"))
+            全.clicked.connect(lambda: self.复制(None, "已复制全部区的单号", 全))
             头.addWidget(全)
         层.addLayout(头)
         总览块 = QFrame()
@@ -613,7 +613,7 @@ class 区域单号页(QWidget):
             块头.addStretch(1)
             if 区名 in self.明细:
                 钮 = _小钮(f"复制 {区名} 全部")
-                钮.clicked.connect(lambda _=False, 区=区名: self.复制(区, f"已复制 {区} {len(self.明细[区][0])} 个单号"))
+                钮.clicked.connect(lambda _=False, 区=区名, b=钮: self.复制(区, f"已复制 {区} {len(self.明细[区][0])} 个单号", b))
                 块头.addWidget(钮)
             层.addLayout(块头)
             if 区名 in self.明细:
@@ -692,7 +692,7 @@ class 区域单号页(QWidget):
         else:
             super().keyPressEvent(事件)
 
-    def 复制(self, 内容, 提示):
+    def 复制(self, 内容, 提示, 钮=None):
         """内容：单号列表（每行一个）；区名（这个区的“标题行 + 序号<Tab>单号”，和以前一样）；None = 全部区。"""
         if isinstance(内容, list):
             文字 = "\n".join(内容)
@@ -701,8 +701,31 @@ class 区域单号页(QWidget):
         else:
             文字 = self.明细[内容][1]
         QApplication.clipboard().setText(文字)
+        if 钮 is not None:
+            self._复制好了(钮)
         if self.状态栏 is not None:
             self.状态栏.showMessage(提示, 4000)
+
+    @staticmethod
+    def _复制好了(钮):
+        """点了“复制”的按钮自己变成“已复制 ✓”1.5 秒再变回来：眼睛在单号区，不用去看窗口最底下（2026-10-29 界面评审 A5）。"""
+        if 钮.property("原文") is None:            # 连点两下：记住的还是最早的字，不会变不回来
+            钮.setProperty("原文", 钮.text())
+            钮.setMinimumWidth(钮.width())          # 钉住宽度，换字时按钮不缩、旁边的东西不跳
+        钮.setText("已复制 ✓")
+        次 = (钮.property("复制次") or 0) + 1
+        钮.setProperty("复制次", 次)
+
+        def 还原():
+            try:
+                if 钮.property("复制次") != 次:     # 中间又点了一次：等最后那次的计时
+                    return
+                钮.setText(钮.property("原文"))
+                钮.setProperty("原文", None)
+                钮.setMinimumWidth(0)
+            except RuntimeError:                   # 已经切到别的结果、按钮没了
+                pass
+        QTimer.singleShot(1500, 还原)
 
 
 def _小钮(文字):
