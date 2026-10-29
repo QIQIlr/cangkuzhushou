@@ -58,6 +58,8 @@ def 运行模块们(名列表, 可见=False, 发送=True, 显示=True, 等待登
     if 测试 is None:
         测试 = os.environ.get("仓库助手_测试") == "1"
     from playwright.sync_api import sync_playwright
+    from 公共 import 任务查询
+    任务查询.新的一次运行()          # 查询间隔每次运行从 1 秒开始；这次运行里放慢了就一直保持（各模块共用）
     开始 = datetime.now()
     方式 = ("可见窗口" if 可见 else "后台") + ("，可发飞书" if 发送 else "，不发飞书")
     多个 = len(名列表) > 1

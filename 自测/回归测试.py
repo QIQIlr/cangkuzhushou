@@ -924,7 +924,99 @@ def 测_不留客户信息():
              (记录.文件夹 / "截图.png").exists() and (记录.文件夹 / "网页快照.html").exists() == 应存)
 
 
-部分 = {"不留客户信息": 测_不留客户信息, "设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
+def 测_查询间隔共用():
+    print("查询间隔：放慢后整次运行都保持（各模块共用）；每个区第一次按天查前隔约 2 秒；下次运行恢复 1 秒（2026-10-29）")
+    from contextlib import contextmanager
+    from urllib.parse import urlencode
+    from 公共 import 任务查询 as 查
+    钟, 等过 = [1000.0], []
+    原 = (查.time.time, 查.time.sleep)
+    查.time.time = lambda: 钟[0]
+    查.time.sleep = lambda s: (等过.append(round(s, 2)), 钟.__setitem__(0, 钟[0] + s))
+    回答们 = []          # 每次点“查询”WMS 回什么：100010 = 点击次数过多
+
+    class 回应:
+        def __init__(self, 期望, 码):
+            参 = {"pageNo": 1, "taskCategories": 期望["taskCategories"], "taskStatus": 期望["taskStatus"],
+                 "shelvesRegionNum": 期望["shelvesRegionNum"]}
+            if 期望["日期范围"]:
+                参[f"{期望['日期参数']}[0]"], 参[f"{期望['日期参数']}[1]"] = 期望["日期范围"]
+            self.url = "https://x/task/pageV1?" + urlencode(参)
+            self.码 = 码
+
+        def json(self):
+            return {"code": self.码, "data": {"total": 5, "list": [1]}}
+
+    class 假页面:
+        期望 = None
+
+        @contextmanager
+        def expect_response(self, *_, **__):
+            class 值:
+                pass
+            v = 值()
+            yield v
+            v.value = 回应(self.期望, 回答们.pop(0) if 回答们 else 0)
+
+        def get_by_role(self, *_, **__):
+            return self
+
+        def locator(self, *_):
+            return self
+
+        def filter(self, **_):
+            return self
+
+        @property
+        def first(self):
+            return self
+
+        def click(self):
+            pass
+
+        def wait_for(self, **_):
+            pass
+
+    class 假记录:
+        def 写(self, *_):
+            pass
+    try:
+        页 = 假页面()
+        总 = {"taskCategories": "4", "taskStatus": "0", "shelvesRegionNum": "D", "日期参数": "createTime", "日期范围": None}
+        天 = {**总, "日期范围": ("2026-10-29 00:00:00", "2026-10-29 23:59:59")}
+
+        def 查一次(器, 期望):
+            页.期望 = 期望
+            等过.clear()
+            器.查(期望)
+            return list(等过)
+        查.新的一次运行()
+        器 = 查.计数查询器(页, 假记录())
+        查一次(器, 总)
+        第一天 = 查一次(器, 天)
+        第二天 = 查一次(器, 天)
+        检查("刚查完总数、第一次按天查前隔约 2 秒；接着按天查隔 1 秒", 第一天 == [2.0] and 第二天 == [1.0], (第一天, 第二天))
+        回答们[:] = [100010]
+        放慢 = 查一次(器, 总)
+        检查("点击次数过多：等 3 秒重查", 3 in 放慢, 放慢)
+        下个模块 = 查.计数查询器(页, 假记录())          # 下一个模块：新的查询器
+        查一次(下个模块, 天)
+        后面 = 查一次(下个模块, 天)
+        检查("放慢后，下一个模块的查询也隔 2 秒（整次运行共用）", 后面 == [2.0], 后面)
+        查.新的一次运行()
+        新器 = 查.计数查询器(页, 假记录())
+        查一次(新器, 天)
+        新 = 查一次(新器, 天)
+        检查("下一次运行恢复成隔 1 秒", 新 == [1.0], 新)
+        import inspect
+        from 公共 import 运行
+        检查("每次运行开始时都恢复（运行.py 调了 新的一次运行）", "任务查询.新的一次运行()" in inspect.getsource(运行.运行模块们))
+    finally:
+        查.time.time, 查.time.sleep = 原
+        查.新的一次运行()
+
+
+部分 = {"查询间隔共用": 测_查询间隔共用, "不留客户信息": 测_不留客户信息, "设置文件保护": 测_设置文件保护, "测试记录标记": 测_测试记录标记, "运行记录页": 测_运行记录页, "设置页文字": 测_设置页文字,
       "查询范围规则": 测_查询范围规则, "无任务包裹迁移": 测_无任务包裹迁移, "查询范围界面": 测_查询范围界面,
       "无任务包裹按仓库查": 测_无任务包裹按仓库查, "改名": 测_改名, "飞书开关": 测_飞书开关,
       "查完一个显示一个": 测_查完一个显示一个, "窗口运行和上次结果": 测_窗口运行和上次结果, "上次结果存取": 测_上次结果存取, "没选范围不跑": 测_没选范围不跑, "不弹小窗口": 测_不弹小窗口, "卡片原地改名": 测_卡片原地改名}
