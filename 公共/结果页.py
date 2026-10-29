@@ -94,7 +94,7 @@ def _结论条(项):
         眉.addWidget(_标签(f"查询时间 {项['时间']:%m/%d %H:%M}", f"color:{色['说明']}; background:transparent;", 换行=False))
     外.addLayout(眉)
     结论 = _标签(项.get("结论") or 项.get("标题") or 项["显示名"],
-               f"font-size:17px; background:transparent;" + (f"color:{色[种 + '字']};" if 种 else ""))
+               f"font-size:{主题.字号['结论']}px; background:transparent;" + (f"color:{色[种 + '字']};" if 种 else ""))
     外.addWidget(结论)
     return 条
 
@@ -722,21 +722,21 @@ def _字段行(x):
     层 = QHBoxLayout(w)
     层.setContentsMargins(16, 10, 16, 10)
     层.setSpacing(12)
-    名 = _标签(x["名"], f"color:{色['说明']}; font-size:13px; background:transparent;", 可选=False, 换行=False)
+    名 = _标签(x["名"], f"color:{色['说明']}; font-size:{主题.字号['字段名']}px; background:transparent;", 可选=False, 换行=False)
     名.setFixedWidth(字段名宽)
     层.addWidget(名, 0, Qt.AlignTop)
     值层 = QVBoxLayout()
     值层.setSpacing(4)
     颜色值 = 色["注意字"] if x.get("提醒") else 色["弱字"] if x.get("灰") else 色["字"]
     字族 = ""          # 规范 v1.3：明细里所有内容同一种字体（微软雅黑 UI）、同一字号、同一粗细，不再换等宽字
-    值样 = f"font-size:15px; color:{颜色值}; {字族} background:transparent;"
+    值样 = f"font-size:{主题.字号['字段值']}px; color:{颜色值}; {字族} background:transparent;"
     有预览 = bool(x.get("预览"))
     值 = _标签(x["预览"] if 有预览 else x["值"], 值样)
     值层.addWidget(值)
     if x.get("注"):
-        值层.addWidget(_标签(x["注"], f"color:{色['说明']}; font-size:12px; background:transparent;"))
+        值层.addWidget(_标签(x["注"], f"color:{色['说明']}; font-size:{主题.字号['说明']}px; background:transparent;"))
     if x.get("提醒"):
-        值层.addWidget(_标签("● " + str(x["提醒"]), f"color:{色['注意字']}; font-size:13px; background:transparent;"))
+        值层.addWidget(_标签("● " + str(x["提醒"]), f"color:{色['注意字']}; font-size:{主题.字号['字段名']}px; background:transparent;"))
     if 有预览:
         钮 = _文字钮(x.get("还有") or "点开看全部")
         钮.setStyleSheet("text-align:left; padding:0;")
