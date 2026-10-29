@@ -509,7 +509,8 @@ class 小窗检查(QObject):
         try:
             if 事件.type() == QEvent.Show and isinstance(对象, QWidget) and 对象.isWindow() \
                     and not isinstance(对象, (QMainWindow, QDialog)) \
-                    and 对象.metaObject().className() not in ("QTipLabel", "QMenu", "QComboBoxPrivateContainer"):
+                    and 对象.metaObject().className() not in ("QTipLabel", "QMenu", "QComboBoxPrivateContainer",
+                                                              "QRollEffect"):   # Qt 自带的下拉“卷出”动画小窗，正常（体检 2026-10-28）
                 栈 = "".join(traceback.format_stack(limit=12)[:-1])
                 文字 = 对象.text() if hasattr(对象, "text") else ""
                 _记下窗口错误(f"出现了意外的小窗口：{对象.metaObject().className()}（文字：{文字!r}）\n{栈}")
