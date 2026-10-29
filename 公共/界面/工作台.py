@@ -353,6 +353,8 @@ class 工作台(QWidget):
             self.列表.addItem(项)
             if 名 == 当前:
                 self.列表.setCurrentItem(项)
+        if self.列表.currentItem() is None and self.列表.count():
+            self.列表.setCurrentRow(0)     # 打开就选中第一个，右边直接显示它的设置（2026-10-29 界面评审 A1，小柒同意）
         self.列表.blockSignals(False)
         提醒 = "\n".join(x for x in (模块参数.问题, 提醒) if x)   # 模块参数.json 读不出来时也在这里说
         self.提醒.setText(提醒)
