@@ -75,6 +75,8 @@ def 读取(写回=True):
 
 def 保存(清单):
     文字 = 说明 + "".join(f"{'开' if 开 else '关'} {名}\n" for 名, 开 in 清单)
-    设置文件.write_text(文字, encoding="utf-8")
+    临时 = 设置文件.with_name(设置文件.name + ".tmp")      # 先写临时文件再替换：写到一半断电，原文件也不会坏（2026-10-29）
+    临时.write_text(文字, encoding="utf-8")
+    临时.replace(设置文件)
     备份文件.parent.mkdir(exist_ok=True)
     备份文件.write_text(文字, encoding="utf-8")
