@@ -5,13 +5,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
 from 公共 import 飞书
+from 公共.界面.主题 import 字号
 from 公共.界面.组件 import 分组块, 按钮, 页眉, 行
 
 
 def _一行(图, 标题, 说明, 右边们):
     """iOS 设置的一行：左边标题 + 灰色说明，右边文字按钮。（图 参数留着不用：规范不在设置行前放彩色图标）"""
     w = 行(标题, list(右边们), 说明 or " ")
-    w.主字.setStyleSheet("font-size:15px;")
+    w.主字.setStyleSheet(f"font-size:{字号['行标题']}px;")
     return w
 
 class 设置页(QWidget):
