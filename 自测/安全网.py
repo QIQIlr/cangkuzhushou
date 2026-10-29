@@ -245,6 +245,16 @@ def 横滚(w):
     return [type(x).__name__ for x in w.findChildren(QAbstractScrollArea) if x.isVisible() and x.horizontalScrollBar().maximum() > 0]
 
 
+def 列表挤出(列表):
+    """模块列表里有行要滚才看得到 = 被挤出去了（滚动条是悬停才出现的，看起来就像那一行被切掉）。
+    窗口最小 1000×640 时 5 个模块也要全部看得见（2026-10-29 界面评审 B1）。"""
+    if not 列表.isVisible() or not 列表.count():
+        return ""
+    需要 = sum(列表.sizeHintForRow(i) for i in range(列表.count()))
+    有 = 列表.viewport().height()
+    return f"{列表.count()} 行需要 {需要}px，只有 {有}px" if 需要 > 有 + 2 else ""
+
+
 def 画得出(项, 名):
     try:
         页 = 结果页.一页(项, QStatusBar(), lambda *a: None)
@@ -389,6 +399,9 @@ def 截全部(到):
             张们.append(p.name)
             滚 = 横滚(w)
             检查("截图", f"{名}_{标}：没有左右滚动", not 滚, 滚)
+            if w.工作台.isVisible():
+                挤 = 列表挤出(w.工作台.列表)
+                检查("截图", f"{名}_{标}：模块列表每一行都完整看得见（没有被挤出去要滚才看到的）", not 挤, 挤)
 
     def 弹窗截(名, 打开):
         def 截了关():

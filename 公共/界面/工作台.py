@@ -7,7 +7,7 @@
 # 参考：Taskless（右侧编辑面板、一个主按钮）、Norix（问候、需要注意清单）、Watchlist（卡片上一个大数字 + 一行小字）。
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QRegularExpression, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QRegularExpression, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen, QRegularExpressionValidator
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QSizePolicy, QStyle, QToolTip,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
@@ -29,7 +29,7 @@ from 公共.模块参数 import 显示名
     "飞书任务明细": "读飞书“我负责的”，勾选后按佐川面单顺序显示，带邮编核对和日语品名参考",
 }
 说明角, 范围角, 飞书角, 上次角 = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3, Qt.UserRole + 4
-行高 = 86
+行高 = 80          # 2026-10-29 界面评审 B1：86 → 80，最小窗口 1000×640 时 5 个模块正好放得下（里面的字整体上移 3px，样子不变）
 
 
 def _开着(索引):
@@ -98,10 +98,10 @@ class 模块卡片画法(QStyledItemDelegate):
         左 = self._文左(选项)
         可用 = r.right() - 160 - 左
         if 编辑:
-            return QRectF(左 - 6, r.top() + 8, min(260, 可用 + 6), 30).toRect()
+            return QRectF(左 - 6, r.top() + 5, min(260, 可用 + 6), 30).toRect()
         名 = (索引.data(Qt.DisplayRole) or "") if 索引 is not None else ""
         宽 = min(QFontMetrics(像素字("行标题", 半粗=True)).horizontalAdvance(名) + 10, 可用)
-        return QRectF(左 - 4, r.top() + 10, 宽 + 8, 26)
+        return QRectF(左 - 4, r.top() + 7, 宽 + 8, 26)
 
     def sizeHint(self, 选项, 索引):
         return QSize(选项.rect.width(), 行高)
@@ -124,7 +124,7 @@ class 模块卡片画法(QStyledItemDelegate):
         画图标(p, "右", QPointF(r.right() - 20, r.center().y()), 11, 色["灰"])
         右宽 = 124
         上次 = 索引.data(上次角)
-        右区 = QRectF(r.right() - 36 - 右宽, r.top() + 14, 右宽, r.height() - 28)
+        右区 = QRectF(r.right() - 36 - 右宽, r.top() + 11, 右宽, r.height() - 22)
         if 上次:
             种 = 状态样子.get(上次["状态"], (上次["状态"], "次", "圆"))[1]
             数 = 上次["数量"] if 上次["数量"] not in ("", None) else ("—" if 上次["状态"] != "失败" else "没查到")
@@ -149,17 +149,17 @@ class 模块卡片画法(QStyledItemDelegate):
         p.setFont(像素字("行标题", 半粗=True))
         p.setPen(QColor(色["字"] if 开 else 色["弱字"]))
         名 = 索引.data(Qt.DisplayRole) or ""
-        p.drawText(QRectF(左, r.top() + 10, 文宽, 24), Qt.AlignLeft | Qt.AlignVCenter,
+        p.drawText(QRectF(左, r.top() + 7, 文宽, 24), Qt.AlignLeft | Qt.AlignVCenter,
                    QFontMetrics(p.font()).elidedText(名, Qt.ElideRight, 文宽))
         p.setFont(像素字("说明"))
         p.setPen(QColor(色["弱字"]))
         说明 = 索引.data(说明角) or ""
-        p.drawText(QRectF(左, r.top() + 35, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
+        p.drawText(QRectF(左, r.top() + 32, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
                    QFontMetrics(p.font()).elidedText(说明, Qt.ElideRight, 文宽))
         范围, 飞 = 索引.data(范围角) or ("", "")
         小字 = " · ".join(x for x in (范围, 飞) if x)
         p.setPen(QColor(色["主"] if 飞 == 自动发字 else 色["弱字"]))
-        p.drawText(QRectF(左, r.top() + 55, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
+        p.drawText(QRectF(左, r.top() + 52, 文宽, 18), Qt.AlignLeft | Qt.AlignVCenter,
                    QFontMetrics(p.font()).elidedText(小字, Qt.ElideRight, 文宽))
         # 行间细线：从文字起头处开始，最后一行不画
         if 索引.row() < 索引.model().rowCount() - 1:
@@ -231,6 +231,7 @@ class 工作台(QWidget):
         中.setSpacing(24)
         左 = QVBoxLayout()
         左.setSpacing(16)
+        self.左层 = 左
         # 需要注意（分组块；没有就不显示）
         self.注意组 = 分组块("需要注意")
         看 = 按钮("看运行记录", "文字")
@@ -246,6 +247,7 @@ class 工作台(QWidget):
         # 模块（分组列表）
         模块区 = QVBoxLayout()
         模块区.setSpacing(6)
+        self.模块区 = 模块区
         行 = QHBoxLayout()
         行.setContentsMargins(0, 0, 0, 0)
         self.数量字 = 标签("", "组名")
@@ -298,11 +300,37 @@ class 工作台(QWidget):
     def resizeEvent(self, 事件):
         super().resizeEvent(事件)
         self._列表高度()
+        QTimer.singleShot(0, self._列表高度)      # 排版完、脚注按新宽度换好行以后再算一次
 
     def _列表高度(self):
-        """白色块只包住这几个模块，下面不留一大块空白；模块多到放不下时才出滚动条。"""
+        """白色块只包住这几个模块，下面不留一大块空白；模块多到放不下时才出滚动条。
+        可用高度 = 页面高度 − 列表上下每一块的实际高度（页眉、需要注意、数量行、提醒、脚注和它们之间的间距）。
+        以前减的是写死的 150，窗口一矮、文字一换行就不够，最小窗口时第 5 个模块被挤出去（2026-10-29 界面评审 B1）。"""
         需要 = max(1, self.列表.count()) * 行高 + 2
-        可用 = self.height() - self.头.sizeHint().height() - 150 - (self.注意组.sizeHint().height() if self.注意组.isVisible() else 0)
+        总 = self.layout()
+        边 = 总.contentsMargins()
+
+        def 高(w, 宽):
+            return w.heightForWidth(宽) if w.hasHeightForWidth() else w.sizeHint().height()
+
+        占 = 边.top() + 边.bottom() + 高(self.头, self.width() - 边.left() - 边.right()) + 总.spacing()
+        if not self.注意组.isHidden():
+            占 += self.注意组.sizeHint().height() + self.左层.spacing()
+        宽 = self.列表.width()
+        块数 = 0
+        for i in range(self.模块区.count()):
+            项 = self.模块区.itemAt(i)
+            w = 项.widget()
+            if w is self.列表:
+                块数 += 1
+            elif w is None:
+                占 += 项.sizeHint().height()       # 数量行（数量字 + 上移/下移）
+                块数 += 1
+            elif not w.isHidden():
+                占 += 高(w, 宽)
+                块数 += 1
+        占 += self.模块区.spacing() * (块数 - 1)
+        可用 = self.height() - 占
         self.列表.setFixedHeight(max(行高 * 2, min(需要, 可用)))
     # ---------- 模块列表（读写和改版前一样） ----------
     def 刷新模块(self):
