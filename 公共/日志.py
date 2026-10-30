@@ -22,6 +22,7 @@ from 公共.错误 import WMS提示错误, 归类, 技术原文, 立刻停下, �
 日志根 = 根目录 / "日志"
 总表 = 日志根 / "运行总表.csv"
 保留天数 = 90
+_清理过 = False        # 旧日志清理每次启动只做一遍（见 _清理旧日志）
 
 _敏感 = [
     (re.compile(r"https://open\.(feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/[\w-]+"), "[飞书Webhook已隐藏]"),
@@ -197,7 +198,12 @@ class 运行记录:
 
 
 def _清理旧日志():
-    """删除 90 天以前的运行文件夹（只删名字以日期开头的文件夹）。"""
+    """删除 90 天以前的运行文件夹（只删名字以日期开头的文件夹）。
+    一次运行会建好几个运行记录（每个模块一个 + 主控），只扫一遍目录就够了（2026-10-31）。"""
+    global _清理过
+    if _清理过:
+        return
+    _清理过 = True
     界限 = datetime.now() - timedelta(days=保留天数)
     if not 日志根.exists():
         return

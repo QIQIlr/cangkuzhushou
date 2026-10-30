@@ -4,6 +4,7 @@
 # 说明：不保存、不输入密码。掉线时会请你在弹出的窗口里手动登录。
 import os
 import re
+import shutil
 from pathlib import Path
 
 from 公共.错误 import (自动化错误, 需要登录, 页面改版, 网络超时, 环境问题, 浏览器被关, 是浏览器被关, 归类,
@@ -14,6 +15,35 @@ WMS首页 = "https://wms-admin.rakufun.jp/#/index"
 专用配置目录 = str(Path(__file__).resolve().parent.parent / "浏览器配置")
 找不到Chrome说明 = ("这台电脑上找不到 Google Chrome（常见的几个安装位置都没有）。"
                 "请先安装 Google Chrome（https://www.google.com/chrome/ ），或告诉 Claude 它装在哪里。")
+
+
+# —— 浏览器配置里的纯缓存：Chrome 会自己重建，攒大了很占地方（2026-10-31 实测：整个配置 697MB，其中约 172MB 是这两块）——
+# 只在启动前清一次，超过 150MB 才清。绝不碰 Cookies / Login Data / IndexedDB（登录状态和网页自己的数据）。
+缓存目录们 = ("Cache", "Code Cache")
+缓存上限 = 150 * 1024 * 1024
+上次清缓存字节 = 0
+
+
+def _目录大小(路径):
+    总 = 0
+    for 根, _, 文件们 in os.walk(路径):
+        for 名 in 文件们:
+            try:
+                总 += os.path.getsize(os.path.join(根, 名))
+            except OSError:
+                pass
+    return 总
+
+
+def _清缓存():
+    """Chrome 的 Cache / Code Cache 超过上限就删掉，返回清掉多少字节。删不掉也不挡运行。"""
+    默认 = Path(专用配置目录) / "Default"
+    大小 = sum(_目录大小(默认 / 名) for 名 in 缓存目录们)
+    if 大小 <= 缓存上限:
+        return 0
+    for 名 in 缓存目录们:
+        shutil.rmtree(默认 / 名, ignore_errors=True)
+    return 大小
 
 
 def 找Chrome():
@@ -37,6 +67,8 @@ def 找Chrome():
 def _启动(p, 可见):
     if 专用窗口开着():
         raise 自动化错误(环境问题, "“自动化专用 Chrome”窗口还开着，请先关掉它再运行。")
+    global 上次清缓存字节
+    上次清缓存字节 = _清缓存()
     try:
         if 可见:
             浏览器 = p.chromium.launch_persistent_context(
@@ -80,6 +112,8 @@ def 打开WMS(p, 可见=False, 记录=None, 等待登录=None):
     浏览器, 页面 = _启动(p, 可见)
     if 记录:
         记录.页面 = 页面
+        if 上次清缓存字节:
+            记录.写(f"    清掉了 Chrome 的旧缓存 {上次清缓存字节 / 1048576:.0f} MB（登录状态不受影响）")
     状态 = _登录状态(页面)
     if 状态 == "已登录":
         return 浏览器, 页面
