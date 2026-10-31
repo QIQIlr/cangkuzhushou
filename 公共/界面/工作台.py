@@ -1,6 +1,7 @@
 # 职责：工作台（打开软件看到的第一页）。
 #   页眉：问候 + 日期 + 上次运行情况；右上：跑完自动发飞书（总开关，只在这里有）、只运行选中的、运行已启用模块（主按钮）
-#   需要注意：上次运行有问题的模块、模块设置文件的提醒（都没有就不显示）
+#   上次没跑成：只在“模块 · 共 N 个”这一行右侧显示一个橙色文字按钮，点开弹窗看详情（不单独占一块高度，2026-10-31）；
+#     模块设置文件的提醒照旧单独一行（没有就不显示）
 #   模块卡片：排列 = 运行顺序（拖动或上移/下移），开关 = 启用，改动立即保存到 模块设置.txt（和改版前一样）
 #   右侧：选中模块的设置面板（就地改名、查询范围、这个模块跑完自动发；改动即保存）
 #   飞书怎么发（小柒 2026-10-24 确认）：总开关 + 每个模块自己的开关，两个都开才自动发；卡片上写的是最终会不会发。
@@ -16,7 +17,7 @@ from 公共 import 模块参数, 模块设置, 查询范围
 from 公共.界面 import 运行历史
 from 公共.界面.主题 import 像素字, 画图标, 状态样子, 色
 from 公共.界面.弹窗 import 模块信息, 模块设置面板
-from 公共.界面.组件 import 分组块, 开关, 按钮, 标签, 状态标签, 画开关, 页眉
+from 公共.界面.组件 import 开关, 按钮, 标签, 画开关, 页眉
 from 公共.模块参数 import 显示名
 
 星期 = "一二三四五六日"
@@ -64,6 +65,16 @@ def 范围文字(原名, 总开关):
     else:
         飞 = "不自动发"
     return 范围, 飞
+
+
+def _一句话(名, r):
+    """把运行总表里那一长串错误摘要压成一行短原因，给弹窗的列表用。
+    摘要本身带“模块名 → 步骤 → 原因 → 建议：…”，列表里只留“步骤：原因”这一段，太长的截断。"""
+    摘要 = r["摘要"].split(" → 建议")[0] if r["摘要"] else ""
+    if 摘要.startswith(r["名字"] + " → "):
+        摘要 = 摘要[len(r["名字"]) + 3:]
+    摘要 = 摘要.replace(" → ", "：")
+    return 摘要[:70] + "…" if len(摘要) > 70 else 摘要
 
 
 class 名字编辑框(QLineEdit):
@@ -242,18 +253,6 @@ class 工作台(QWidget):
         左 = QVBoxLayout()
         左.setSpacing(16)
         self.左层 = 左
-        # 需要注意（分组块；没有就不显示）
-        self.注意组 = 分组块("需要注意")
-        看 = 按钮("看运行记录", "文字")
-        看.clicked.connect(self.去看记录)
-        注意头 = QHBoxLayout()
-        注意头.setContentsMargins(0, 0, 0, 0)
-        self.注意组.layout().removeWidget(self.注意组.标题)
-        注意头.addWidget(self.注意组.标题)
-        注意头.addStretch(1)
-        注意头.addWidget(看)
-        self.注意组.layout().insertLayout(0, 注意头)
-        左.addWidget(self.注意组)
         # 模块（分组列表）
         模块区 = QVBoxLayout()
         模块区.setSpacing(6)
@@ -263,6 +262,11 @@ class 工作台(QWidget):
         self.数量字 = 标签("", "组名")
         行.addWidget(self.数量字)
         行.addStretch(1)
+        self.问题条们 = []                       # 上次没跑成的模块；刷新前先给空的，免得按钮被点了却还没有清单
+        self.问题钮 = 按钮("", "文字")          # 上次没跑成的模块：点开看详情（2026-10-31，零新增高度）
+        self.问题钮.setStyleSheet(f"color:{色['注意字']}; font-weight:bold;")
+        self.问题钮.clicked.connect(self._看问题)
+        行.addWidget(self.问题钮)
         self.上移钮 = 按钮("", "图标", 图="上", 提示="上移（选中的模块往前跑）")
         self.下移钮 = 按钮("", "图标", 图="下", 提示="下移")
         self.上移钮.clicked.connect(lambda: self.移动(-1))
@@ -314,8 +318,9 @@ class 工作台(QWidget):
 
     def _列表高度(self):
         """白色块只包住这几个模块，下面不留一大块空白；模块多到放不下时才出滚动条。
-        可用高度 = 页面高度 − 列表上下每一块的实际高度（页眉、需要注意、数量行、提醒、脚注和它们之间的间距）。
-        以前减的是写死的 150，窗口一矮、文字一换行就不够，最小窗口时第 5 个模块被挤出去（2026-10-29 界面评审 B1）。"""
+        可用高度 = 页面高度 − 列表上下每一块的实际高度（页眉、数量行、提醒、脚注和它们之间的间距）。
+        以前减的是写死的 150，窗口一矮、文字一换行就不够，最小窗口时第 5 个模块被挤出去（2026-10-29 界面评审 B1）。
+        报错入口现在在标题行里，不再单独占高度，所以这里不用再减“需要注意”那一块（2026-10-31）。"""
         需要 = max(1, self.列表.count()) * 行高 + 2
         总 = self.layout()
         边 = 总.contentsMargins()
@@ -324,8 +329,6 @@ class 工作台(QWidget):
             return w.heightForWidth(宽) if w.hasHeightForWidth() else w.sizeHint().height()
 
         占 = 边.top() + 边.bottom() + 高(self.头, self.width() - 边.left() - 边.right()) + 总.spacing()
-        if not self.注意组.isHidden():
-            占 += self.注意组.sizeHint().height() + self.左层.spacing()
         宽 = self.列表.width()
         块数 = 0
         for i in range(self.模块区.count()):
@@ -371,7 +374,7 @@ class 工作台(QWidget):
         self.提醒.setVisible(bool(提醒))
         self._更新数字()
         self.面板.设总开关(self.自动发.isChecked())
-        self._更新注意(清单)
+        self._更新问题()
         self._更新页眉()
         self._列表高度()
         self._选中变了(self.列表.currentItem())
@@ -436,7 +439,7 @@ class 工作台(QWidget):
         self.面板.设总开关(开)
         self.列表.viewport().update()
 
-    # ---------- 页眉、数字、需要注意 ----------
+    # ---------- 页眉、数字、上次没跑成 ----------
     def _更新数字(self):
         清单 = self.当前清单()
         开数 = sum(1 for _, 开 in 清单 if 开)
@@ -454,32 +457,37 @@ class 工作台(QWidget):
             坏 = [r for r in 同批 if r["状态"] not in ("成功", "无数据", "未运行")]
             谁 = "、".join(显示名(名) for 名, r in self.上次.items() if r in 同批)
             self.头.设副标题(f"上次运行 {最近:%m/%d %H:%M}（{谁}），"
-                           + ("都正常。" if not 坏 else f"{len(坏)} 个有问题，见下面“需要注意”。"))
+                           + ("都正常。" if not 坏 else f"{len(坏)} 个没跑成（点模块列表上方 ⚠ 查看）。"))
         else:
             self.头.设副标题("还没有运行记录。打开要跑的模块，点右上角“运行已启用模块”。")
 
-    def _更新注意(self, 清单):
-        层 = self.注意组.块.层
-        while 层.count():
-            w = 层.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        self.注意组.行们 = []
-        条们 = []
-        for 名, _ in 清单:
+    def 上次时间(self):
+        """这些没跑成的模块里最近的那次运行时间；一个都没有就用现在，说明里也写得出话。
+        只能在这几个模块自己里面取：待增值 21:30 没跑成、待拣货 22:00 成功时，若对所有模块取最晚，
+        弹窗会写“22:00 那次运行”，可 22:00 那次待增值根本没跑（2026-10-31 QA 复现）。"""
+        时刻们 = [self.上次[名]["时间"] for 名, _, _ in self.问题条们 if 名 in self.上次]
+        return max(时刻们, default=datetime.now())
+
+    def _更新问题(self):
+        """上次运行有问题的模块：只在标题行右侧显示一个按钮，不单独占一块高度。
+        以前是几条换行的大块，4 条时有 405px，把模块列表挤到 160px，最小窗口看不到全部模块（2026-10-31 修）。"""
+        self.问题条们 = []
+        for 名, _ in self.当前清单():
             r = self.上次.get(名)
             if r and r["状态"] not in ("成功", "无数据", "未运行"):
-                摘要 = r["摘要"].split(" → 建议")[0] if r["摘要"] else ""
-                if 摘要.startswith(r["名字"] + " → "):
-                    摘要 = 摘要[len(r["名字"]) + 3:]
-                条们.append((r["状态"], f"{显示名(名)}：上次（{r['时间']:%m/%d %H:%M}）{r['状态']}" + (f"，{摘要}" if 摘要 else "")))
-        for 状态, 文字 in 条们[:4]:
-            w = QWidget()
-            横 = QHBoxLayout(w)
-            横.setContentsMargins(16, 10, 16, 10)
-            横.setSpacing(12)
-            横.addWidget(状态标签(状态), 0, Qt.AlignTop)
-            字条 = 标签(文字, 换行=True)
-            横.addWidget(字条, 1)
-            self.注意组.加行(w)
-        self.注意组.setVisible(bool(条们))
+                self.问题条们.append((名, r["状态"], _一句话(名, r)))
+        self.问题钮.setText(f"⚠ {len(self.问题条们)} 个上次没跑成" if self.问题条们 else "")
+        self.问题钮.setVisible(bool(self.问题条们))
+
+    def _看问题(self):
+        """点 ⚠ 按钮：弹窗列出每个模块卡在哪一步；可以去看运行记录，也可以只重跑这几个。"""
+        if not self.问题条们:
+            return
+        from 公共.界面.弹窗 import 问题清单窗口
+        选了 = 问题清单窗口(self, self.上次时间(), self.问题条们).选吧()
+        if not 选了:
+            return
+        if 选了[0] == "看记录":
+            self.去看记录.emit()
+        elif 选了[0] == "重跑":
+            self.运行请求.emit(list(选了[1]))

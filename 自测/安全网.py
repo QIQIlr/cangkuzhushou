@@ -6,6 +6,8 @@
 # 规则：不连 WMS、不开浏览器、不发飞书；只用临时复制的设置（回归测试.隔离）+ 自测\基准数据\ 里固定的设置和运行记录 + 编造的假数据。
 #   截图里的时间、问候语都固定，所以同样的程序每次截出来一模一样，有差异就是界面真的变了。
 #   截图只用编造的数据（没有真实客户的姓名、地址、电话）；测试数据\ 里的真实数据只用来检查计算，不截图。
+import csv
+import hashlib
 import os
 import shutil
 import subprocess
@@ -72,7 +74,7 @@ from PySide6.QtCore import QRect, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QStatusBar  # noqa: E402
 
-from 公共 import 待处理, 结果页, 窗口, 表格, 飞书, 邮编  # noqa: E402
+from 公共 import 待处理, 结果页, 窗口, 表格, 飞书, 邮编, 日志  # noqa: E402
 from 公共.错误 import 自动化错误, 网络超时, 等不到  # noqa: E402
 from 公共.界面 import 提示, 工作台 as 台  # noqa: E402
 import importlib  # noqa: E402
@@ -458,6 +460,26 @@ def 截全部(到):
     if "待审核" in 名们:
         w.工作台.列表.setCurrentRow(名们.index("待审核"))
         截("02_工作台_选中待审核")
+    # 工作台·有错误（2026-10-31）：报错入口不能把模块列表挤出去——窄窗口也必须 5 个模块全见
+    原表 = 日志.总表.read_bytes()
+    # 列按表头来、不写死（2026-10-31 QA 指出）：先用 csv 读出表头，再用 csv 写，摘要里有逗号也不会串列；
+    # “假”落在日志文件夹列，“测试”留空；表头没有哪一列就不写那一列。
+    表头 = next(csv.reader(原表.decode("utf-8-sig").splitlines()))
+    假行们 = [{"时间": "2026-10-31 20:50:00", "模块": "待审核", "状态": "失败", "数量": "", "用时(秒)": "42",
+              "错误摘要": "待审核 → 第3步 查询 D区 → 程序本身出错：程序遇到了没预料到的问题。 → 建议：发给 Claude。",
+              "日志文件夹": "假", "测试": ""},
+             {"时间": "2026-10-31 20:50:00", "模块": "待增值", "状态": "不完整", "数量": "1671", "用时(秒)": "38",
+              "错误摘要": "待增值 → 第5步 查询 E区 → 网络或超时：点“查询”后 30 秒内没有拿到结果。 → 建议：检查网络后重跑。",
+              "日志文件夹": "假", "测试": ""}]
+    with open(日志.总表, "a", encoding="utf-8", newline="") as f:
+        写 = csv.writer(f)
+        for 行 in 假行们:
+            写.writerow([行.get(列, "") for 列 in 表头])
+    w.工作台.刷新模块()
+    截("02a_工作台_有错误")
+    弹窗截("02b_弹窗_上次没跑成", lambda: w.工作台._看问题())
+    日志.总表.write_bytes(原表)
+    w.工作台.刷新模块()
     w.工作台.列表.setCurrentRow(-1)
     w.去(1)
     截("03_运行结果_还没运行")
@@ -586,7 +608,22 @@ def main():
         if 更新:
             shutil.rmtree(基准截图, ignore_errors=True)
             shutil.copytree(截图夹, 基准截图)
-            检查("截图对比", f"已把这次的 {len(张们)} 张截图存成新的基准（--更新基准）", True)
+            # 拷完当场自检（2026-10-31）：出现过“报保存成功、其实一张没写进去”（Windows 上 rmtree 留下残余文件时
+            # copytree 会失败）。一个谎报成功的测试工具比没有测试更危险，所以数量、md5、时间三样都查。
+            问题 = []
+            存下 = sorted(p.name for p in 基准截图.glob("*.png"))
+            if len(存下) != len(张们):
+                问题.append(f"基准里 {len(存下)} 张，这次截了 {len(张们)} 张")
+            抽 = [n for n in ("01_工作台_宽.png", "02b_弹窗_上次没跑成_宽.png") if (截图夹 / n).exists()]
+            for 名 in 抽:
+                甲, 乙 = 基准截图 / 名, 截图夹 / 名
+                if not 甲.exists() or 甲.stat().st_size != 乙.stat().st_size:
+                    问题.append(f"{名} 没拷进去或大小不对")
+                elif hashlib.md5(甲.read_bytes()).hexdigest() != hashlib.md5(乙.read_bytes()).hexdigest():
+                    问题.append(f"{名} 大小对但内容不一样（md5 不同）")
+            最早 = min((p.stat().st_mtime for p in 基准截图.glob("*.png")), default=0)
+            检查("截图对比", f"已把这次的 {len(张们)} 张截图存成新的基准（最早 {time.strftime('%H:%M:%S', time.localtime(最早))}）",
+                 not 问题, "；".join(问题))
         elif not 基准截图.exists():
             检查("截图对比", "还没有基准截图：先让小柒确认现在的样子，再用 --更新基准 建立", False)
         else:

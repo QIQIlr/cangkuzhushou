@@ -4,7 +4,7 @@
 # 新页面、新模块、新设置都先从这里挑零件；不够时按规范补一个，写回规范。颜色只从 主题.色 取。
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton,
+from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget)
 
 from 公共.界面.主题 import 图标, 图码, 图标字体对象, 字号, 状态样子, 色, 行高最小
@@ -84,27 +84,33 @@ def 状态标签(状态, 文字=None, 小=False, 醒目=False):
 
 
 class 页眉(QWidget):
-    """页面最上面：灰色小字（日期等）+ 大标题 + 灰色副标题，右边放按钮。"""
+    """页面最上面：灰色小字（日期等）+ 大标题 + 灰色副标题，右边放按钮。
+    副标题独占一整行（跨整行宽），右上的按钮跨三行垂直居中（2026-10-31）：
+    以前副标题夹在左列里，窄窗口下只剩 253px 宽，工作台的运行说明要折三行、把模块列表挤掉 18px；
+    改成整行宽后 1000×640 里副标题一行写得下，宽窗口的样子不变。"""
 
     def __init__(self, 眉, 标题, 副标题=""):
         super().__init__()
-        层 = QHBoxLayout(self)
-        层.setContentsMargins(0, 0, 0, 0)
-        层.setSpacing(12)
-        左 = QVBoxLayout()
-        左.setSpacing(2)
+        外 = QGridLayout(self)
+        外.setContentsMargins(0, 0, 0, 0)
+        外.setHorizontalSpacing(12)
+        外.setVerticalSpacing(2)
         self.眉 = 标签(眉, "眉")
         self.标题 = 标签(标题, "大标题")
         self.副标题 = 标签(副标题, "副标题", 换行=True)
-        左.addWidget(self.眉)
-        左.addWidget(self.标题)
-        左.addWidget(self.副标题)
-        层.addLayout(左, 1)
-        self.副标题.setVisible(bool(副标题))      # 先放进窗口里再决定显不显示（不然会闪出 pythonw 小窗）
+        外.addWidget(self.眉, 0, 0)
+        外.addWidget(self.标题, 1, 0)
+        外.addWidget(self.副标题, 2, 0, 1, 2)          # 第 2 行、跨两列 = 整行宽
         self.右 = QHBoxLayout()
         self.右.setSpacing(12)
-        层.addLayout(self.右)
+        self.右.setContentsMargins(0, 0, 0, 0)     # 不加这句，Qt 会给“装在 QWidget 里的布局”套 9px 默认边距，按钮会整体左移 9px
         self.右.setAlignment(Qt.AlignVCenter)
+        self.右块 = QWidget()
+        self.右块.setLayout(self.右)
+        外.addWidget(self.右块, 0, 1, 3, 1, Qt.AlignVCenter)   # 按钮跨三行、垂直居中
+        外.setColumnStretch(0, 1)
+        外.setColumnStretch(1, 0)
+        self.副标题.setVisible(bool(副标题))      # 先放进窗口里再决定显不显示（不然会闪出 pythonw 小窗）
 
     def 设副标题(self, 文字):
         self.副标题.setText(文字)

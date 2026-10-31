@@ -1,6 +1,7 @@
 # 职责：弹出的小窗口和模块设置面板。内容、按钮、保存规则和改版前一样，只换了样子。
 #   任务选择窗口：转寄退货任务运行中，按飞书顺序列出全部标题，点一行勾选（不分组、不排序、默认不勾，小柒 2026-10-24 确认）
 #   飞书设置窗口：粘贴 Webhook，测试成功才保存
+#   问题清单窗口：工作台标题行右侧 ⚠ 点开——上次没跑成的模块，可以去看记录或只重跑这几个（2026-10-31）
 #   模块设置面板：工作台右边那块（就地改名、查询范围、跑完自动发飞书；改动即保存，小柒 2026-10-24）
 import importlib
 
@@ -14,7 +15,7 @@ from 公共 import 模块参数, 模块设置, 飞书
 from 公共.界面 import 提示
 from 公共.界面.提示 import 窗内弹窗, 胶囊钮
 from 公共.界面.主题 import 字号, 色
-from 公共.界面.组件 import 分组块, 勾选行, 开关, 按钮, 标签, 空白提示, 行
+from 公共.界面.组件 import 分组块, 勾选行, 开关, 按钮, 标签, 状态标签, 空白提示, 行
 
 
 class _勾在右边(QStyledItemDelegate):
@@ -174,6 +175,55 @@ class 飞书设置窗口(窗内弹窗):
             self.accept()
         else:
             提示.警告(self, "没有成功", f"测试没有成功（{状态}）：{说明}\n\n设置没有保存。")
+
+
+class 问题清单窗口(窗内弹窗):
+    """上次运行没跑成的模块（2026-10-31，小柒确认效果图）：标题 + 一句说明 + 分组列表 + 三个按钮。
+    列表每行：模块名 / 一句原因 / 状态标签。选吧() 返回 None（关闭）、("看记录",) 或 ("重跑", [原名…])。"""
+
+    def __init__(self, 父, 时间, 条们):
+        super().__init__(父, 460)
+        self.选了 = None            # 基类的 self.结果 是“接受 / 拒绝”，这里要带回更细的选择，所以另用一个属性
+        self.条们 = list(条们)
+        层 = self.卡层
+        题 = QLabel("上次没跑成的地方")
+        题.setAlignment(Qt.AlignCenter)
+        题.setStyleSheet(f"font-size:{字号['弹窗标题']}px; font-weight:bold; color:{色['字']}; background:transparent;")
+        层.addWidget(题)
+        说 = QLabel(f"{时间:%m/%d %H:%M} 那次运行，这 {len(self.条们)} 个模块没有拿到结果。")
+        说.setAlignment(Qt.AlignCenter)
+        说.setWordWrap(True)
+        说.setStyleSheet(f"font-size:{字号['正文'] - 1}px; color:{色['次字']}; background:transparent;")
+        层.addWidget(说)
+        层.addSpacing(6)
+        组 = 分组块("")
+        for 原名, 状态, 原因 in self.条们:
+            组.加行(行(模块参数.显示名(原名), 状态标签(状态), 原因))
+        层.addWidget(组)
+        层.addSpacing(10)
+        底 = QHBoxLayout()
+        底.setSpacing(10)
+        关 = 胶囊钮("关闭", "取消")
+        看 = 胶囊钮("看运行记录", "次")
+        跑 = 胶囊钮(f"重新运行这 {len(self.条们)} 个", "主")
+        关.clicked.connect(self.reject)
+        看.clicked.connect(lambda: self._选(("看记录",)))
+        跑.clicked.connect(lambda: self._选(("重跑", [x[0] for x in self.条们])))
+        for b in (关, 看, 跑):
+            底.addWidget(b, 1)              # 三个等宽并排
+        层.addLayout(底)
+
+    def _选(self, 值):
+        self.选了 = 值
+        self.accept()
+
+    def 选吧(self):
+        self.exec()
+        return self.选了
+
+    def 默认动作(self):
+        """回车 = 主按钮（重跑这几个）。"""
+        self._选(("重跑", [x[0] for x in self.条们]))
 
 
 def 模块信息(模块名):
