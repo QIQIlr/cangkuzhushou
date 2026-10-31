@@ -44,7 +44,12 @@ class 数量表格(QTableWidget):
         self.setItemDelegate(_表格行画法(self))
         self.itemDoubleClicked.connect(lambda _: self.复制())
 
-    def 填(self, 列名, 行们, 起点=False):
+    def 填(self, 列名, 行们, 起点=False, 变化=False, 提示们=None):
+        """变化=True：画「和上次比」「今天各次」的格子（2026-11-01）。
+        颜色按格子里的字符串有没有符号判断（小柒 2026-11-01 定）：以 + 开头 → 红（变多）、以 - 开头 → 绿（变少）、
+        “0” 浅灰、“—” 次要字灰，其余（今天各次里每次的实际数量）正文黑；不会把 +N 涂成橙色。
+        提示们：{(行名, 列名): 提示文字}，鼠标停上去显示“上次多少 → 这次多少”。
+        变化=False 时下面的行为一个字没改。"""
         self.clear()
         self.setColumnCount(len(列名))
         self.setRowCount(len(行们))
@@ -69,7 +74,23 @@ class 数量表格(QTableWidget):
                     格.setData(Qt.BackgroundRole, _色(色["合计底"]))
                 elif 今天:
                     格.setData(Qt.BackgroundRole, _色(色["今天"]))
-                if s == "失败":
+                if 变化:
+                    if s == "失败":
+                        格.setForeground(_色(色["坏"]))
+                        格.setFont(粗体)
+                    elif c > 0 and s == "—":
+                        格.setForeground(_色(色["弱字"]))
+                    elif c > 0 and s == "0":
+                        格.setForeground(_色(色["灰"]))
+                    elif c > 0 and s.startswith("+"):
+                        格.setForeground(_色(色["变多"]))     # 变多：红
+                    elif c > 0 and s.startswith("-"):
+                        格.setForeground(_色(色["变少"]))     # 变少：绿
+                    if c > 0:
+                        提示 = (提示们 or {}).get(f"{名}|{列名[c]}")
+                        if 提示:
+                            格.setToolTip(str(提示))
+                elif s == "失败":
                     格.setForeground(_色(色["坏"]))
                     格.setFont(粗体)
                 elif c > 0 and ("+" in s or s == "—"):
@@ -79,8 +100,10 @@ class 数量表格(QTableWidget):
                 self.setItem(r, c, 格)
         self.resizeColumnsToContents()
         self.resizeRowsToContents()
+        # 变化表的列多一点（日期 + 各次时间 + 今天变化），格子间留白略窄一点，窄窗口（1000×640）也不出左右滚动（2026-11-01）
+        加 = 18 if 变化 else 22
         for c in range(len(列名)):
-            self.setColumnWidth(c, self.columnWidth(c) + (16 if c == 0 else 22))
+            self.setColumnWidth(c, self.columnWidth(c) + (16 if c == 0 else 加))
         self._自然列 = [self.columnWidth(c) for c in range(len(列名))]
         if getattr(self, "_最大列", None) and len(self._最大列) == len(self._自然列):   # 切换合计 / 合箱 / 单箱时不跳
             self._自然列 = [max(a, b) for a, b in zip(self._自然列, self._最大列)]
@@ -158,7 +181,14 @@ class 表块(QWidget):
         self.格 = 数量表格(状态栏)
         self.格.末合计强制 = 末合计
         self.段钮们 = []
+        变了 = bool(表.get("变化"))          # 可选键：画变化表（2026-11-01），不写就和以前一样
+        提示们 = 表.get("提示们") or {}
         视图们 = 表["视图们"]
+        # 可选键“视图提示们”：每种看法一份提示（待拣货的合计 / 合箱 / 单箱数字不一样，提示也要跟着换）。
+        # 不写时所有看法共用 提示们，和以前完全一样（2026-11-01）。
+        提示们们 = 表.get("视图提示们") or [提示们 for _ in 视图们]
+        if len(提示们们) != len(视图们):
+            提示们们 = [提示们 for _ in 视图们]
         if len(视图们) > 1:
             轨 = QFrame()                  # 规范“分段控件”：灰色轨道，选中那段白底；放在标题行右边
             轨.setObjectName("分段")
@@ -173,19 +203,20 @@ class 表块(QWidget):
                 钮.setCheckable(True)
                 钮.setChecked(k == 0)
                 钮.setCursor(Qt.PointingHandCursor)
-                钮.clicked.connect(lambda _=False, 列=列, 行=行, 起=表["起点"]: self.格.填(列, 行, 起))
+                钮.clicked.connect(lambda _=False, 列=列, 行=行, 起=表["起点"], 提=提示们们[k]:
+                                 self.格.填(列, 行, 起, 变了, 提))
                 组.addButton(钮)
                 轨层.addWidget(钮)
                 self.段钮们.append(钮)
         层.addLayout(头)
         # 切到合箱 / 单箱后表的宽度、高度不跳：先把每种看法都填一遍，记下最大的，再回到第一种
         宽们, 高们, 列们 = [], [], []
-        for _, 列, 行 in 视图们:
-            self.格.填(列, 行, 表["起点"])
+        for k, (_, 列, 行) in enumerate(视图们):
+            self.格.填(列, 行, 表["起点"], 变了, 提示们们[k])
             宽们.append(self.格.自然宽)
             高们.append(self.格.自然高)
             列们.append(list(self.格._自然列))
-        self.格.填(视图们[0][1], 视图们[0][2], 表["起点"])
+        self.格.填(视图们[0][1], 视图们[0][2], 表["起点"], 变了, 提示们们[0])
         self.格._自然列 = self.格._最大列 = [max(c) for c in zip(*列们)]   # 每列取各种看法里最宽的，切换时不跳
         self.格.自然宽, self.格.自然高 = max(宽们), max(高们)
         self.统一列 = None
@@ -214,7 +245,9 @@ class 表格排列(QWidget):
     同一行的表一样宽、一样高（矮的补空白）；窗口大小一变就重新排。任何宽度都不会出现左右滚动、不会截掉列。"""
     间距 = 16
 
-    def __init__(self, 块们):
+    def __init__(self, 块们, 目标宽=None):
+        """目标宽：给死宽度（2026-11-01，给「今天各次」里流程一览和时刻表对齐用）。
+        不传时和以前完全一样：按自己收到的宽度排、最多拉到完整宽度的 1.5 倍。"""
         super().__init__()
         self.块们 = 块们
         for 块 in 块们:
@@ -233,7 +266,11 @@ class 表格排列(QWidget):
                 块.统一列 = 统一列
                 块.格._统一列 = 统一列
         self._上次宽 = None
-        self._排(900)
+        if 目标宽:
+            self.setFixedWidth(int(目标宽))
+            self._排(int(目标宽))
+        else:
+            self._排(900)
 
     def _每行几张(self, 总宽):
         统一宽 = max(b.最小宽() for b in self.块们)          # 一页里所有白框一样宽

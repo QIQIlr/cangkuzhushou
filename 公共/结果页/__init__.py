@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from 公共.界面 import 主题
+from 公共.结果页 import 变化页
 from 公共.结果页.零件 import (_底部, _标签, _结论条, _提醒框, _错误框, 提醒们, 要看数, 飞书说明, 标签字)  # noqa: F401
 from 公共.结果页.数量页 import 数量表格, _数量内容
 from 公共.结果页.单号页 import 区域单号页
@@ -58,6 +59,11 @@ def 一页(项, 状态栏, 发送):
     层.setContentsMargins(24, 20, 24, 16)
     层.setSpacing(16)
     层.addWidget(_结论条(项))
+    变 = 项.get("变化") or {}                 # 没有变化数据时，下面这些零件一个都不建，页面和以前完全一样
+    if 变:
+        摘要 = 变化页.摘要(项)
+        if 摘要 is not None:
+            层.addWidget(摘要)
     句们 = 提醒们(项)
     if 项.get("错误们"):
         错行 = QHBoxLayout()               # 错误块最宽 640、靠左；窄窗口时跟着变窄，字照样换行
@@ -66,9 +72,33 @@ def 一页(项, 状态栏, 发送):
         层.addLayout(错行)
     elif 句们:                             # 只有提醒、没有出错（如“任务有变动”“对不上”）：照旧单独一块橙色
         层.addWidget(_提醒框(句们))
-    内容 = _内容(项, 状态栏)
-    if 内容 is not None:
-        层.addWidget(内容)
+    if 变:
+        段 = 变化页.段控件()
+        宿主 = QWidget()
+        宿主层 = QVBoxLayout(宿主)
+        宿主层.setContentsMargins(0, 0, 0, 0)
+        宿主层.setSpacing(0)
+
+        def 装(序=0):
+            """只换内容区，不重新查询、不重新读文件（变化在运行时已经算好了）。"""
+            变化页.设段(序)
+            while 宿主层.count():
+                旧 = 宿主层.takeAt(0).widget()
+                if 旧 is not None:
+                    旧.setParent(None)
+                    旧.deleteLater()
+            新 = _内容(项, 状态栏) if int(序) == 0 else 变化页.内容(项, int(序), 状态栏)
+            if 新 is not None:
+                宿主层.addWidget(新)
+
+        装(变化页.当前段)
+        段.选了.connect(装)
+        层.addWidget(段, 0, Qt.AlignLeft)
+        层.addWidget(宿主)
+    else:
+        内容 = _内容(项, 状态栏)
+        if 内容 is not None:
+            层.addWidget(内容)
     层.addStretch(1)
     滚.setWidget(内)
     外层.addWidget(滚, 1)
