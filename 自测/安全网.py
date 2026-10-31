@@ -423,7 +423,8 @@ def 截图场景():
 def 截全部(到):
     到.mkdir(parents=True, exist_ok=True)
     for f in 到.glob("*.png"):
-        f.unlink()
+        if not f.name.startswith("变化_"):     # 变化图由 截变化 自己清、自己截（2026-11-01：日常跑别把它们删掉）
+            f.unlink()
     w = 窗口.主窗口()
     w.setAttribute(Qt.WA_DontShowOnScreen)
     w.resize(*宽)
@@ -671,6 +672,8 @@ def 截变化(到):
     from 公共.结果页 import 变化页
     from 公共.结果页.数量页 import 表块
     到.mkdir(parents=True, exist_ok=True)
+    for f in 到.glob("变化_*.png"):
+        f.unlink()
     张们 = []
     w = 窗口.主窗口()
     w.setAttribute(Qt.WA_DontShowOnScreen)
