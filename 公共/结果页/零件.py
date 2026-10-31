@@ -29,12 +29,6 @@ def _标签(文字, 样子="", 可选=True, 换行=True):
     return l
 
 
-def _徽章(文字, 种):
-    底 = {"好": 色["好底"], "注意": 色["注意底"], "坏": 色["坏底"]}.get(种, 色["次底"])
-    return _标签(文字, f"background:{底}; color:{色[种]}; border-radius:10px; padding:2px 10px; font-weight:bold;",
-               可选=False, 换行=False)
-
-
 # ---------------- 小部件：结论、红框橙框、底部一行 ----------------
 
 

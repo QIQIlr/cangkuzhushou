@@ -1075,7 +1075,6 @@ def 测_路径不写死():
     finally:
         os.path.isfile = 原
     检查("找不到时的说明是中文、告诉怎么办", "找不到 Google Chrome" in wms.找不到Chrome说明 and "安装" in wms.找不到Chrome说明)
-    import re as _re
     要的 = dict(l.split("==") for l in (根目录 / "requirements.txt").read_text(encoding="utf-8").splitlines()
                if l and not l.startswith("#"))
     from importlib.metadata import version

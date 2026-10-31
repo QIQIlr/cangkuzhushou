@@ -70,7 +70,7 @@ app = 测.应用()
 
 from PySide6.QtCore import QRect, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
-from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QPushButton, QStatusBar, QTableWidget, QWidget  # noqa: E402
+from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QStatusBar  # noqa: E402
 
 from 公共 import 待处理, 结果页, 窗口, 表格, 飞书, 邮编  # noqa: E402
 from 公共.错误 import 自动化错误, 网络超时, 等不到  # noqa: E402

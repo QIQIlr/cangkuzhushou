@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QTab
 
 from 公共 import 模块参数, 模块设置
 from 公共.界面 import 运行历史
-from 公共.界面.主题 import 字, 状态样子, 颜色, 色
+from 公共.界面.主题 import 状态样子, 颜色, 色
 from 公共.界面.组件 import 分段, 卡片, 按钮, 标签, 页眉
 from 公共.日志 import 日志根
 

@@ -27,11 +27,13 @@ def _读全部():
     global 问题
     with _锁:
         if not 参数文件.exists():
+            问题 = ""          # 文件不在了就不存在“读不出”，提醒条要跟着消失
             return {}
         try:
             数据 = _读(参数文件)
             if not isinstance(数据, dict):
                 raise ValueError("内容不是设置")
+            问题 = ""          # 这次读成功就清掉上次的提醒，否则提醒条会一直挂到重启
             return 数据
         except Exception as e:
             try:

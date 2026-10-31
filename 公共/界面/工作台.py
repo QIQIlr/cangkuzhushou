@@ -7,16 +7,16 @@
 # 参考：Taskless（右侧编辑面板、一个主按钮）、Norix（问候、需要注意清单）、Watchlist（卡片上一个大数字 + 一行小字）。
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QRegularExpression, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QRegularExpression, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen, QRegularExpressionValidator
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QSizePolicy, QStyle, QToolTip,
                                QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from 公共 import 模块参数, 模块设置, 查询范围
 from 公共.界面 import 运行历史
-from 公共.界面.主题 import 像素字, 字, 画图标, 状态样子, 色
+from 公共.界面.主题 import 像素字, 画图标, 状态样子, 色
 from 公共.界面.弹窗 import 模块信息, 模块设置面板
-from 公共.界面.组件 import 分组块, 卡片, 图标字, 开关, 按钮, 标签, 状态标签, 画开关, 页眉
+from 公共.界面.组件 import 分组块, 开关, 按钮, 标签, 状态标签, 画开关, 页眉
 from 公共.模块参数 import 显示名
 
 星期 = "一二三四五六日"

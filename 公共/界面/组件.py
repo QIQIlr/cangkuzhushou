@@ -3,11 +3,11 @@
 #   勾选行（多选：选中的行末尾蓝色 ✓）、开关（开是绿色）、分段控件、状态（● 圆点 + 文字）、页眉、空白提示。
 # 新页面、新模块、新设置都先从这里挑零件；不够时按规范补一个，写回规范。颜色只从 主题.色 取。
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QVBoxLayout, QWidget)
 
-from 公共.界面.主题 import 像素字, 图标, 图码, 图标字体对象, 字号, 状态样子, 色, 行高最小
+from 公共.界面.主题 import 图标, 图码, 图标字体对象, 字号, 状态样子, 色, 行高最小
 
 # 样式表只认英文的属性值，这里把中文叫法换过去
 _角色码 = {"眉": "eyebrow", "大标题": "title", "副标题": "subtitle", "小标题": "heading", "组名": "group", "说明": "hint",

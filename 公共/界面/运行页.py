@@ -9,13 +9,13 @@ import os
 import time
 
 from PySide6.QtCore import QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QSizePolicy,
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar,
                                QStackedWidget, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget)
 
 from 公共 import 结果页
-from 公共.界面.主题 import 像素字, 字号, 字, 状态样子, 画图标, 色
-from 公共.界面.组件 import 卡片, 图标字, 按钮, 标签, 空白提示, 页眉
+from 公共.界面.主题 import 像素字, 字号, 状态样子, 色
+from 公共.界面.组件 import 按钮, 标签, 空白提示, 页眉
 from 公共.模块参数 import 显示名
 
 状态角, 数字角, 要看角 = Qt.UserRole + 1, Qt.UserRole + 2, Qt.UserRole + 3

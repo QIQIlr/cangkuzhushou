@@ -2,8 +2,8 @@
 #   小柒说可以以后，所有页面只用这里的零件；新零件先加到这里和规范里，再用。
 #   入口：设置页最下面“界面样板”。每个零件旁边写它参考的苹果官方设计（HIG）条目。
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLineEdit, QListWidget, QProgressBar, QScrollArea, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView)
+from PySide6.QtWidgets import (QHBoxLayout, QLineEdit, QListWidget, QProgressBar, QScrollArea,
+                               QVBoxLayout, QWidget)
 
 from 公共.界面 import 提示
 from 公共.界面.主题 import 色, 字号

@@ -28,7 +28,7 @@ from 公共.界面 import 主题  # noqa: E402
 from 公共.界面 import 提示 as 提示框  # noqa: E402
 from 公共.界面.主题 import 图标, 色  # noqa: E402
 from 公共.界面.弹窗 import 任务选择窗口, 飞书设置窗口  # noqa: E402,F401  （测试脚本也从这里拿）
-from 公共.界面.组件 import 图标字, 按钮, 标签  # noqa: E402
+from 公共.界面.组件 import 按钮, 标签  # noqa: E402
 from 公共.界面.工作台 import 工作台  # noqa: E402
 from 公共.界面.记录页 import 记录页  # noqa: E402
 from 公共.界面.设置页 import 设置页  # noqa: E402
@@ -220,12 +220,6 @@ class 主窗口(QMainWindow):
         self._导航图标()
 
     # ---------- 运行 ----------
-    def 运行全部(self):
-        self.开始运行([名 for 名, 开 in self.工作台.当前清单() if 开])
-
-    def 运行选中(self):
-        self.开始运行(self.工作台.选中的())
-
     def 开始运行(self, 名列表):
         if self.运行中:
             return

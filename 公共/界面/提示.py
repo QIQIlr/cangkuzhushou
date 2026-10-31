@@ -10,7 +10,7 @@
 #   窗内弹窗：需要放列表、输入框的弹窗（选择任务、设置飞书）继承它，用法和 QDialog 一样（exec / accept / reject）。
 from PySide6.QtCore import QEvent, QEventLoop, Qt
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from 公共.界面.主题 import 字号, 色
 
@@ -194,7 +194,3 @@ def 信息(父, 标题, 文字):
 def 询问(父, 标题, 文字, 是="确定", 否="取消", 危险=False):
     """返回 True = 点了“是”。回车 = “是”，Esc = “否”。"""
     return 选择(父, 标题, 文字, [(否, "取消"), (是, "危险" if 危险 else "主")]) == 1
-
-
-def 活动窗口():
-    return QApplication.activeWindow()

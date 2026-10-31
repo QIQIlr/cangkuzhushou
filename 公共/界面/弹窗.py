@@ -6,7 +6,7 @@ import importlib
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QScrollArea, QStyle, QStyledItemDelegate,
                                QStyleOptionViewItem, QVBoxLayout, QWidget)
 
@@ -14,7 +14,7 @@ from 公共 import 模块参数, 模块设置, 飞书
 from 公共.界面 import 提示
 from 公共.界面.提示 import 窗内弹窗, 胶囊钮
 from 公共.界面.主题 import 字号, 色
-from 公共.界面.组件 import 分组块, 分隔线, 勾选行, 卡片, 开关, 按钮, 标签, 空白提示, 行
+from 公共.界面.组件 import 分组块, 勾选行, 开关, 按钮, 标签, 空白提示, 行
 
 
 class _勾在右边(QStyledItemDelegate):

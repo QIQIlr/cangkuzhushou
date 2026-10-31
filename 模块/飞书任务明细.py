@@ -18,7 +18,7 @@ sys.path.insert(0, str(根目录))
 from 公共 import 表格, 模块参数  # noqa: E402
 from 公共 import 飞书网页 as 飞  # noqa: E402
 from 公共 import 邮编  # noqa: E402
-from 公共.错误 import 自动化错误, 数据不完整, 程序出错, 飞书异常, 需要登录飞书  # noqa: E402
+from 公共.错误 import 自动化错误, 程序出错, 飞书异常, 需要登录飞书  # noqa: E402
 
 模块名 = "飞书任务明细"
 网站 = "飞书"            # 运行时不用先打开 WMS

@@ -154,10 +154,10 @@ def 关掉自动化Chrome(超时秒=4):
           "Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:CANGKU_PROFILE) } | "
           "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
     try:
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", 命令], timeout=超时秒,
-                       env={**os.environ, "CANGKU_PROFILE": 专用配置目录}, capture_output=True,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return True
+        结果 = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", 命令], timeout=超时秒,
+                             env={**os.environ, "CANGKU_PROFILE": 专用配置目录}, capture_output=True,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return 结果.returncode == 0     # PowerShell 自己报错（返回码不是 0）也算没关掉，不能报成关掉了
     except Exception:
         return False
 

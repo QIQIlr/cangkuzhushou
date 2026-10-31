@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from 公共.界面 import 主题
-from 公共.结果页.零件 import 要看数, _字, _标签, _组名, _文字钮
+from 公共.结果页.零件 import _字, _标签, _组名, _文字钮
 
 色 = 主题.色
 字段名宽 = 84        # 面单明细里“字段名”那一列的固定宽度（数字再长也不挤）
