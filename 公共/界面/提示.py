@@ -72,6 +72,7 @@ class 窗内弹窗(QWidget):
     # ---- 和 QDialog 一样的用法 ----
     def exec(self):
         if self._独立:
+            self.show()          # __init__ 最后藏起来了；独立小窗里要显示出来，否则只剩一个空框（2026-11-01）
             self._外.exec()
             return self.结果
         self.setGeometry(self._窗.rect())
