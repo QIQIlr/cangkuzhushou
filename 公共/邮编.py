@@ -185,6 +185,10 @@ def _建议(改写们, 县市):
 
 def _按地址查(s, 县市):    # 1. 都道府県（没写就在全国找市区町村）
     县 = next((k for k in 县市 if s.startswith(k)), None)
+    if 县 is None and s.startswith("日本"):
+        县2 = next((k for k in 县市 if s[2:].startswith(k)), None)
+        if 县2 is not None:
+            s, 县 = s[2:], 县2          # 地址开头多写了国名“日本”，去掉再查（2026-11-01，如“日本大阪府大阪市…”）
     剩 = s[len(县):] if 县 else s
     候选县 = [县] if 县 else list(县市)
     # 2. 市区町村：最长的能对上的名字；也认省略了“郡”的写法。没写都道府县时在全国找，重名就提醒
