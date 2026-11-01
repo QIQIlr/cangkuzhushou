@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from 公共.界面 import 主题
-from 公共.结果页.零件 import _字, _标签, _组名, _文字钮
+from 公共.结果页.零件 import _字, _标签, _组名, _文字钮换行
 
 色 = 主题.色
 字段名宽 = 84        # 面单明细里“字段名”那一列的固定宽度（数字再长也不挤）
@@ -215,8 +215,7 @@ class 面单页(QWidget):
         for 段名, 说明, 项们 in 页["收起段"]:
             组 = _分组("", 项们)
             组.setVisible(False)
-            钮 = _文字钮(f"› {段名}（{说明}，点开看）")
-            钮.setStyleSheet("text-align:left; padding-left:16px;")
+            钮 = _文字钮换行(f"› {段名}（{说明}，点开看）")
 
             def 切换(_=False, 组=组, 钮=钮, 段名=段名, 说明=说明):
                 开 = not 组.isVisible()

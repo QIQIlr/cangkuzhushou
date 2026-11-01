@@ -234,7 +234,7 @@ class 数量表格(QTableWidget):
     def 拉到(self, 目标宽, 统一列=None):
         """自动排版用（2026-10-25 第三轮）：一页里所有表一样宽、各列对齐。
         每一列取全页同一位置那一列的最大宽度；多出来的宽度平均分给中间各区的列（日期列和合计列不动，各表对齐）。
-        永远不比完整宽度窄。"""
+        只有在窄窗口放不下（目标宽比完整宽度窄）时才等比压缩各列，绝不让页面出左右滚动（2026-11-01，取消侧栏自动收起后）。"""
         self.目标宽 = 目标宽
         if 统一列 is not None:
             self._统一列 = 统一列
@@ -244,12 +244,17 @@ class 数量表格(QTableWidget):
         n = len(列们)
         中间 = list(range(1, n - 1)) if self.末合计 and n > 2 else (list(range(1, n)) or [0])
         自然 = sum(列们) + 2 * self.frameWidth()
-        多 = max(0, 目标宽 - 自然)
-        for i, c in enumerate(中间):
-            列们[c] += 多 // len(中间) + (多 % len(中间) if i == 0 else 0)
+        if 目标宽 > 0 and 目标宽 < 自然:
+            可用 = max(1, 目标宽 - 2 * self.frameWidth())
+            比例 = 可用 / sum(列们)
+            列们 = [max(20, int(w * 比例)) for w in 列们]
+        else:
+            多 = max(0, 目标宽 - 自然)
+            for i, c in enumerate(中间):
+                列们[c] += 多 // len(中间) + (多 % len(中间) if i == 0 else 0)
         for c, w in enumerate(列们):
             self.setColumnWidth(c, w)
-        self.setFixedSize(max(自然, 目标宽), self.自然高)
+        self.setFixedSize(目标宽 if 目标宽 > 0 else 自然, self.自然高)
 
     def 统一前宽(self):
         """按全页统一的列宽算，这张表完整显示要多宽。"""
@@ -379,11 +384,8 @@ class 表格排列(QWidget):
                 块.统一列 = 统一列
                 块.格._统一列 = 统一列
         self._上次宽 = None
-        if 目标宽:
-            self.setFixedWidth(int(目标宽))
-            self._排(int(目标宽))
-        else:
-            self._排(900)
+        self._目标宽 = int(目标宽) if 目标宽 else None   # 对齐目标：流程一览和各次表一样宽；比可用宽窄就自动收缩
+        self._排(self._目标宽 if self._目标宽 else 900)
 
     def _每行几张(self, 总宽):
         统一宽 = max(b.最小宽() for b in self.块们)          # 一页里所有白框一样宽
@@ -404,6 +406,7 @@ class 表格排列(QWidget):
             最宽 = max(b.最小宽() for b in self.块们)            # 全页统一，上下排时右边也对齐
             # 一行几张平分这一行的宽度，但最多拉宽到完整宽度的 1.5 倍（不然全屏时一张表会被拉得很稀）
             宽 = max(最宽, min((总宽 - self.间距 * (k - 1)) // k, int(最宽 * 1.5)))
+            宽 = min(宽, 总宽)             # 窄窗口放不下时压缩到总宽，不出左右滚动（2026-11-01）
             高 = max(b.自然高() for b in self.块们[i:i + k])
             for j, b in enumerate(行):
                 b.定大小(宽, 高)
@@ -414,7 +417,10 @@ class 表格排列(QWidget):
 
     def resizeEvent(self, 事件):
         super().resizeEvent(事件)
-        self._排(self.width())
+        宽 = self.width()
+        if self._目标宽:
+            宽 = min(self._目标宽, 宽)      # 窄窗口下收缩，不出左右滚动（2026-11-01）
+        self._排(宽)
 
 
 def _数量内容(项, 状态栏):

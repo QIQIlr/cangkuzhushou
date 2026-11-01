@@ -5,7 +5,7 @@
 import html
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
@@ -70,6 +70,25 @@ def _文字钮(文字):
     b.setProperty("kind", "ghost")
     b.setCursor(Qt.PointingHandCursor)
     return b
+
+
+class 换行文字钮(QLabel):
+    """像“文字按钮”但文字长时能换行（面单页「评论和其他信息」那种收起段按钮，2026-11-01）。
+    蓝字、手型；点一下发出 clicked，和 QPushButton 一样用法（setText / clicked）。"""
+    clicked = Signal()
+
+    def __init__(self, 文字=""):
+        super().__init__(文字)
+        self.setWordWrap(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(f"color:{色['主']}; font-size:{主题.字号['正文']}px; background:transparent; padding-left:16px;")
+
+    def mousePressEvent(self, _e):
+        self.clicked.emit()
+
+
+def _文字钮换行(文字):
+    return 换行文字钮(文字)
 
 
 def _打开(路径):

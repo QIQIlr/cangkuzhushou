@@ -91,7 +91,7 @@ class 主窗口(QMainWindow):
         总.setSpacing(0)
 
         # 左侧菜单可以收起（小柒 2026-10-25）：收起只剩图标（约 64px），展开是图标 + 文字（约 212px）；
-        # 顶部 ☰ 切换，记住上次的样子；进“运行结果”时自动收起，离开时自动展开回来（2026-10-31），手动展开过就不再自动收或展。
+        # 顶部 ☰ 切换，记住上次的样子。三个页面随便切，展开 / 收起状态保持一致（小柒 2026-11-01 定：取消进结果页自动收起）。
         self.侧 = 侧 = QFrame()
         侧.setObjectName("侧栏")
         侧层 = QVBoxLayout(侧)
@@ -156,8 +156,6 @@ class 主窗口(QMainWindow):
         self.statusBar().showMessage("测试模式：不发飞书" if 测试不发送 else "")
         self.statusBar().setVisible(测试不发送)
         self._本次 = None
-        self.菜单手动展开过 = False
-        self.自动收起 = False            # 记住当前这个“收起”是程序自动做的，不是用户点的
         self.设菜单收起(bool(模块参数.界面设置("菜单收起", False)))
         try:   # 打开时：运行结果页先显示上一次的结果（标明时间）
             from 公共 import 上次结果
@@ -172,8 +170,6 @@ class 主窗口(QMainWindow):
         """收起 = 只剩图标（鼠标停在图标上显示文字）；展开 = 图标 + 文字。记进 模块参数.json 的“界面”。"""
         from 公共 import 模块参数
         self.菜单收起 = bool(收起)
-        if 手动 and not 收起:
-            self.菜单手动展开过 = True
         self.侧.setFixedWidth(64 if 收起 else 212)
         for w in (self.软件名, self.软件说明):
             w.setVisible(not 收起)
@@ -184,21 +180,13 @@ class 主窗口(QMainWindow):
             b.setProperty("narrow", "1" if 收起 else "0")
             b.style().unpolish(b)
             b.style().polish(b)
-        if 手动:                       # 只记你自己点 ☰ 的结果；进结果页时自动收起不记
-            self.自动收起 = False      # 用户主动点了 ☰，程序就别再插手
+        if 手动:                       # 只记你自己点 ☰ 的结果
             模块参数.保存界面设置("菜单收起", self.菜单收起)
 
     def 去(self, 序号):
         self.导航钮[min(序号, 3)].setChecked(True)          # 第 5 页“界面样板”从设置进去，导航上亮着“设置”
         self.页们.setCurrentIndex(序号)
         self._导航图标()
-        if 序号 == 1:
-            if not self.菜单收起 and not self.菜单手动展开过:
-                self.设菜单收起(True)          # 看结果时把地方让给结果
-                self.自动收起 = True           # 记下这是程序收的，离开结果页要还回去
-        elif self.自动收起:
-            self.设菜单收起(False)             # 离开结果页：自动收的自动展开（2026-10-31 修）
-            self.自动收起 = False
         if 序号 == 2:
             self.记录页.刷新()
         elif 序号 == 3:
