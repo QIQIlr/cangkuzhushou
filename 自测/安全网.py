@@ -72,7 +72,7 @@ app = 测.应用()
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
-from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QStatusBar  # noqa: E402
+from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QPushButton, QStatusBar  # noqa: E402
 
 from 公共 import 待处理, 结果页, 窗口, 表格, 飞书, 邮编, 日志  # noqa: E402
 from 公共.错误 import 自动化错误, 网络超时, 等不到  # noqa: E402
@@ -282,6 +282,75 @@ def 画得出(项, 名):
         return False, "", traceback.format_exc()
 
 
+def 假长品名项():
+    """检查 A 用：编一条内容物一行超过 40 字的假任务（不碰 _假面单详情），确保内容物会折叠。"""
+    飞 = importlib.import_module("模块.飞书任务明细")
+    表, 内容物行 = 飞.读对照表()
+    长品名 = "这是一条特别特别长的品名用来确认超过四十个字之后会不会正常折叠并且点开看全部还能再收起来" * 2
+    源 = [{"标题": "【到付转寄申请】261099-000099 LYF2499999 1.0kg D-09", "评论数": 0, "详情": {
+        "描述行": ["会员标识码：2499999", "入库转运单号：261099-000099", f"具体物品及数量明细：{长品名}",
+                 "转寄地址：〒100-0001 東京都千代田区千代田1-1", "收件人：テスト 太郎", "电话：090-0000-0000",
+                 "寄件人：测试 寄件人"], "评论": []}}]
+    任务们 = [飞.整理任务(s["标题"], s["评论数"], s["详情"], 表, 内容物行) for s in 源]
+    结果 = {"状态": "成功", "数量": 1, "开始时间": 固定时间, "任务们": 任务们, "列表提醒": [], "错误信息": "", "错误列表": []}
+    m = 消息("飞书任务明细", 结果)
+    return 成项("飞书任务明细", "转寄退货任务", 结果, m)
+
+
+def _面单页逐条点开(项):
+    """检查 A 用：画出结果页，点开每一条任务。返回 (错误数, 缺内容物的行们, 折叠点开变收起的行们, 折叠点开没变的行们)。"""
+    from 公共.结果页.面单页 import 面单页 as 面单页类
+    页 = 结果页.一页(项, QStatusBar(), lambda *a: None)
+    页.setAttribute(Qt.WA_DontShowOnScreen)
+    页.resize(1000, 700)
+    页.show()
+    等(0.05)
+    面单 = next((x for x in 页.findChildren(面单页类)), None)
+    错误们 = []
+
+    def 收(e类型, e值, tb):
+        错误们.append("".join(traceback.format_exception(e类型, e值, tb)))
+    原钩 = sys.excepthook
+    sys.excepthook = 收
+    缺, 折好, 折坏 = [], [], []
+    try:
+        for i in range(面单.列表.count()):
+            try:
+                面单.列表.setCurrentRow(i)     # 报错在信号调用的槽里，可能不抛回这里，所以另挂 excepthook 兜底
+            except Exception:
+                错误们.append(traceback.format_exc())
+            等(0.01)
+            if 项["面单"][i].get("失败"):
+                continue
+            字 = " ".join(l.text() for l in 面单.详情.findChildren(QLabel) if l.isVisible())
+            if "内容物" not in 字:
+                缺.append(i)
+            钮 = next((b for b in 面单.详情.findChildren(QPushButton) if b.isVisible() and "点开看全部" in b.text()), None)
+            if 钮 is not None:
+                钮.click()
+                (折好 if "收起" in 钮.text() else 折坏).append(i)
+    finally:
+        sys.excepthook = 原钩
+        页.close()
+    return len(错误们), 缺, 折好, 折坏
+
+
+def 独立弹窗检查():
+    """检查 B 用：没有主窗口时的弹窗，看里面卡片是不是看得见。返回 {可见, 卡可见, 宽}。"""
+    框 = 提示.提示框(None, "测试", "安全网检查独立弹窗", [("好", "主")])
+    框._外.setAttribute(Qt.WA_DontShowOnScreen)
+    结果 = {}
+
+    def 查():
+        结果["可见"] = bool(框.isVisible())
+        结果["卡可见"] = bool(框.卡.isVisible())
+        结果["宽"] = 框._外.width()
+        框.reject()
+    QTimer.singleShot(300, 查)
+    框.exec()
+    return 结果
+
+
 def 模块检查():
     print("② 模块检查（假数据 + 测试数据，结果计算和显示）")
     # —— 待处理三模块的“往前查”规则 ——
@@ -400,6 +469,26 @@ def 模块检查():
              (结果["数量"], 共))
     except FileNotFoundError:
         检查("转寄退货任务", "测试数据\\ 不在：跳过真实数据检查", True)
+
+    # —— 面单页每一条任务都能点开、详情画全（含折叠的长品名）——
+    真结果, 共 = 转寄结果("成功", 用真实测试数据=True)
+    场景 = [("假长品名", 假长品名项()),
+            ("测试数据", 成项("飞书任务明细", "转寄退货任务", 真结果, 消息("飞书任务明细", 真结果)))]
+    错数, 缺们, 折好, 折坏 = [], [], [], []
+    for 名, 项 in 场景:
+        错, 缺, 折, 坏 = _面单页逐条点开(项)
+        错数.append(错)
+        缺们 += [(名, i) for i in 缺]
+        折好 += [(名, i) for i in 折]
+        折坏 += [(名, i) for i in 坏]
+    检查("转寄退货任务", "面单页：每条任务都能点开，详情画全（含折叠的长品名）",
+         not any(错数) and not 缺们 and 折好 and not 折坏,
+         f"错误 {sum(错数)} 条、缺内容物 {缺们}、折叠点开变收起 {折好}、折叠没变 {折坏}")
+
+    # —— 没有主窗口时的弹窗：卡片看得见，不是空框 ——
+    弹 = 独立弹窗检查()
+    检查("弹窗", "没有主窗口时的弹窗：卡片看得见，不是空框",
+         弹.get("可见") and 弹.get("卡可见") and (弹.get("宽") or 0) >= 400, 弹)
 
 
 # =================== 3. 截图 ===================
