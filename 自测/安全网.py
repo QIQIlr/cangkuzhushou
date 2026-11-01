@@ -734,6 +734,82 @@ def 拆分结果(组们):
             "拆分": {"合箱增值": 合箱, "单箱增值": 单箱}, "拆分核对": 核对}
 
 
+def _跑拆分假数据(种):
+    """用真的 运行拆分() 造截图结果（不连 WMS）：种 = 没查到 / 核对没通过。
+    不手写卡片、不改结果状态；后面的 组成消息 → 加拆分卡片 也走模块真代码。"""
+    import contextlib
+    from 公共.错误 import 数据不完整
+    配置 = importlib.import_module("模块.待增值").配置
+
+    class 假页:
+        def get_by_text(self, *_):
+            return self
+
+        @property
+        def first(self):
+            return self
+
+        def click(self):
+            pass
+
+        def wait_for_timeout(self, *_):
+            pass
+
+    class 假记录:
+        def 写(self, *_):
+            pass
+
+        def 步骤(self, *_):
+            return contextlib.nullcontext()
+
+    class 数值:
+        def __init__(self, 全部, 天们):
+            self.全部 = 全部
+            self.天们 = 天们
+
+    class 假查询器:
+        def __init__(self, 页面, 记录):
+            self.页面, self.记录 = 页面, 记录
+
+        def 查(self, 期望):
+            小类 = (期望.get("小类") or {}).get("值")
+            区 = 期望["shelvesRegionNum"]
+            if 种 == "没查到" and 区 == "E" and 小类 in ("32", "33"):
+                raise 自动化错误(数据不完整, f"自测：E区 小类 {小类} 这次没查到")
+            数 = 答案[(小类, 区)]
+            if 期望["日期范围"] is None:
+                return 数.全部
+            日 = date.fromisoformat(期望["日期范围"][0][:10])
+            return 数.天们.get(日, 0)
+
+    答案 = {}
+    for 区 in ("D", "E"):
+        甲们, 乙们 = _卡样[f"{区}区"]
+        天甲 = {d - timedelta(days=k): v for k, v in enumerate(甲们)}
+        天乙 = {d - timedelta(days=k): v for k, v in enumerate(乙们)}
+        答案[("32", 区)] = 数值(sum(甲们), 天甲)
+        答案[("33", 区)] = 数值(sum(乙们), 天乙)
+        多 = 12 if 种 == "核对没通过" else 0
+        答案[(None, 区)] = 数值(sum(甲们) + sum(乙们) + 多, {})
+
+    名们 = ("进入页面", "下拉选择", "清空日期", "填日期", "下拉选项", "计数查询器")
+    原 = {名: getattr(待处理, 名) for 名 in 名们}
+    原时间 = 待处理.datetime
+    待处理.进入页面 = lambda *a, **k: None
+    待处理.下拉选择 = lambda *a, **k: None
+    待处理.清空日期 = lambda *a, **k: None
+    待处理.填日期 = lambda *a, **k: None
+    待处理.下拉选项 = lambda *a, **k: ["全部"]
+    待处理.计数查询器 = 假查询器
+    待处理.datetime = _固定时间
+    try:
+        return 待处理.运行拆分(配置, 假页(), 假记录(), {"查询范围": ["瑞江仓库"], "发到飞书": False})
+    finally:
+        for 名, 值 in 原.items():
+            setattr(待处理, 名, 值)
+        待处理.datetime = 原时间
+
+
 def _位置(控件, 根):
     """控件相对主窗口的位置和大小（卡片出来前后比这个，一个像素都不许变）。"""
     if 控件 is None:
@@ -748,12 +824,12 @@ def _卡键(表, 挑, 倒着=False):
     return next((k for k in (键们[::-1] if 倒着 else 键们) if 挑(*k.split("|", 1))), None)
 
 
-def _出一格卡(表, 键, 数据=None):
+def _出一格卡(表, 键):
     """把某一格的小卡片显示出来（和鼠标停在这一格上一模一样）；返回那张卡片。"""
     for 行 in range(表.rowCount()):
         for 列 in range(1, 表.columnCount()):
             if 表._格里名(表.item(行, 列)) == 键:
-                表._出卡(表.item(行, 列), 数据 if 数据 is not None else 表.卡片们[键])
+                表._出卡(表.item(行, 列), 表.卡片们[键])
                 return 表._卡
     return None
 
@@ -766,15 +842,20 @@ def 截卡片(到):
     张们 = []
     瑞江 = 拆分结果([("瑞江仓库", ["D区", "E区"])])
     松户 = 拆分结果([("松户仓库", ["A区", "C区", "F区"])])
-    没通过 = 拆分结果([("瑞江仓库", ["D区", "E区"])])
-    for 一 in 没通过["拆分核对"].values():
-        一.update({"通过": False, "复查": True, "提醒": f"⚠ 全部 {一['全部'] + 12}，和合箱增值 + 单箱增值差 12 单"})
+    没查到 = _跑拆分假数据("没查到")
+    没通过 = _跑拆分假数据("核对没通过")
+    检查("截图", "14 的假结果来自真的 运行拆分：状态不完整、E区 失败、有错误块",
+         没查到["状态"] == "不完整" and 没查到["数据"]["增值服务"]["E区"] == "失败"
+         and bool(没查到["错误列表"]), (没查到["状态"], 没查到["错误信息"]))
+    检查("截图", "15 的假结果来自真的 运行拆分：核对没通过、状态不完整、有错误块",
+         没通过["状态"] == "不完整" and any(v.get("通过") is False for v in 没通过["拆分核对"].values())
+         and bool(没通过["错误列表"]), (没通过["状态"], 没通过["错误信息"]))
     某日 = lambda 行, 列: 列 == "E区" and "合计" not in 行 and "今天" not in 行
-    场景 = [("12_卡片_悬停_E区某日", 瑞江, 某日, None, True),
-            ("13_卡片_最右列", 瑞江, lambda 行, 列: 列 == "瑞江合计" and 行 != "合计", None, True),
-            ("14_卡片_没查到", 瑞江, 某日, "没查到", True),
-            ("15_卡片_核对没通过", 没通过, 某日, None, True),
-            ("16_卡片_松户三区", 松户, lambda 行, 列: 列 == "C区" and "合计" not in 行, None, True)]
+    场景 = [("12_卡片_悬停_E区某日", 瑞江, 某日, True),
+            ("13_卡片_最右列", 瑞江, lambda 行, 列: 列 == "瑞江合计" and 行 != "合计", True),
+            ("14_卡片_没查到", 没查到, 某日, True),
+            ("15_卡片_核对没通过", 没通过, 某日, True),
+            ("16_卡片_松户三区", 松户, lambda 行, 列: 列 == "C区" and "合计" not in 行, True)]
 
     def 截了():
         w.grab().save(str(到 / f"{名}_{标}.png"))
@@ -786,7 +867,7 @@ def 截卡片(到):
     w.show()
     等(0.4)
     try:
-        for 名, 结果, 挑, 换, 倒着 in 场景:
+        for 名, 结果, 挑, 倒着 in 场景:
             m = 消息("待增值", 结果)
             项 = 成项("待增值", "待增值", 结果, m)
             w._显示结果([项])
@@ -803,13 +884,9 @@ def 截卡片(到):
                 检查("截图", f"{名}_{标}：找到了要悬浮的那一格", 键 is not None, list(表.卡片们)[:6])
                 if 键 is None:
                     continue
-                数据 = None
-                if 换 == "没查到":           # 那一格没查到时的样子（用真的出卡函数算，不手写字）
-                    行名, 列名 = 键.split("|", 1)
-                    数据 = 待处理._一格卡片(行名, 列名, "失败", "失败", "失败", "合箱增值", "单箱增值")
                 白框 = 表.parentWidget()
                 前 = (表.geometry(), _位置(表, w), _位置(白框, w), 表.sizeHint())
-                卡 = _出一格卡(表, 键, 数据)
+                卡 = _出一格卡(表, 键)
                 等(0.15)
                 后 = (表.geometry(), _位置(表, w), _位置(白框, w), 表.sizeHint())
                 检查("截图", f"{名}_{标}：卡片出现前后，表格和白框的位置、大小一个像素都不变", 前 == 后, (前, 后))

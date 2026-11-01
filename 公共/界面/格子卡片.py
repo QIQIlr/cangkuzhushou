@@ -96,7 +96,9 @@ class 格子卡片(QFrame):
         层.addLayout(合)
 
         if 数据.get("提醒"):
-            提醒 = QLabel(str(数据["提醒"]))
+            # 数字和单位中间用不换行空格，避免“12 单”被拆成两行（复审 2026-11-01）
+            提醒文 = str(数据["提醒"]).replace(" 单", " 单")
+            提醒 = QLabel(提醒文)
             提醒.setWordWrap(True)
             提醒.setStyleSheet(f"color:{色['注意字']}; font-size:{字号['说明']}px;")
             层.addWidget(提醒)
