@@ -70,7 +70,7 @@ for 名, 到 in (("模块参数.json", 测.模块参数.参数文件), ("模块�
         shutil.copyfile(基准数据 / 名, 到)
 app = 测.应用()
 
-from PySide6.QtCore import QRect, Qt, QTimer  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QStatusBar  # noqa: E402
 
@@ -708,6 +708,145 @@ def 截变化(到):
     return 张们
 
 
+# ============ 3b. 格子小卡片截图（2026-11-01：待增值悬停 / 点一下看合箱、单箱） ============
+_卡样 = {"D区": ([230, 200, 172, 0], [60, 40, 34, 0]),
+        "E区": ([240, 180, 141, 0], [150, 100, 63, 0]),
+        "A区": ([60, 55, 0], [25, 20, 0]),
+        "C区": ([402, 380, 0], [73, 68, 0]),
+        "F区": ([282, 240, 0], [75, 60, 0])}
+
+
+def 拆分结果(组们):
+    """假数据：一份“合箱增值 + 单箱增值分开查”的待增值结果。
+    规矩：每个格子 合箱 + 单箱 = 格子里的数（所以卡片里的合计一定和格子里的一样）。"""
+    类 = list(importlib.import_module("模块.待增值").配置["类别们"])[0]
+    合箱, 单箱, 合并, 核对 = {}, {}, {}, {}
+    for _, 区们 in 组们:
+        for 区 in 区们:
+            甲们, 乙们 = _卡样[区]
+            合箱[区] = 回(sum(甲们), 甲们)
+            单箱[区] = 回(sum(乙们), 乙们)
+            合并[区] = 回(sum(甲们) + sum(乙们), [a + b for a, b in zip(甲们, 乙们)])
+            核对[区] = {"通过": True, "复查": False, "全部": 合并[区]["全部"],
+                     "合箱": 合箱[区]["全部"], "单箱": 单箱[区]["全部"], "差": 0, "允许": 5, "提醒": None}
+    return {"状态": "成功", "数量": sum(v["全部"] for v in 合并.values()), "开始时间": 固定时间, "组们": 组们,
+            "数据": {类: 合并}, "错误信息": "", "错误列表": [], "范围提醒": [],
+            "拆分": {"合箱增值": 合箱, "单箱增值": 单箱}, "拆分核对": 核对}
+
+
+def _位置(控件, 根):
+    """控件相对主窗口的位置和大小（卡片出来前后比这个，一个像素都不许变）。"""
+    if 控件 is None:
+        return None
+    点 = 控件.mapTo(根, QPoint(0, 0))
+    return (点.x(), 点.y(), 控件.width(), 控件.height())
+
+
+def _卡键(表, 挑, 倒着=False):
+    """按挑法找卡片的键；倒着=True 从最近的日期往前找（截图想要有数字的那一天，不要全 0 的头一天）。"""
+    键们 = list(表.卡片们)
+    return next((k for k in (键们[::-1] if 倒着 else 键们) if 挑(*k.split("|", 1))), None)
+
+
+def _出一格卡(表, 键, 数据=None):
+    """把某一格的小卡片显示出来（和鼠标停在这一格上一模一样）；返回那张卡片。"""
+    for 行 in range(表.rowCount()):
+        for 列 in range(1, 表.columnCount()):
+            if 表._格里名(表.item(行, 列)) == 键:
+                表._出卡(表.item(行, 列), 数据 if 数据 is not None else 表.卡片们[键])
+                return 表._卡
+    return None
+
+
+def 截卡片(到):
+    """格子小卡片的截图 + 检查：① 表格和白框一个像素都不动；② 卡片完整在窗口里；③ 没有横向滚动条。"""
+    print("③b 格子小卡片（待增值：合箱 / 单箱）")
+    from 公共.结果页.数量页 import 数量表格
+    from 公共.界面.格子卡片 import 格子卡片
+    张们 = []
+    瑞江 = 拆分结果([("瑞江仓库", ["D区", "E区"])])
+    松户 = 拆分结果([("松户仓库", ["A区", "C区", "F区"])])
+    没通过 = 拆分结果([("瑞江仓库", ["D区", "E区"])])
+    for 一 in 没通过["拆分核对"].values():
+        一.update({"通过": False, "复查": True, "提醒": f"⚠ 全部 {一['全部'] + 12}，和合箱增值 + 单箱增值差 12 单"})
+    某日 = lambda 行, 列: 列 == "E区" and "合计" not in 行 and "今天" not in 行
+    场景 = [("12_卡片_悬停_E区某日", 瑞江, 某日, None, True),
+            ("13_卡片_最右列", 瑞江, lambda 行, 列: 列 == "瑞江合计" and 行 != "合计", None, True),
+            ("14_卡片_没查到", 瑞江, 某日, "没查到", True),
+            ("15_卡片_核对没通过", 没通过, 某日, None, True),
+            ("16_卡片_松户三区", 松户, lambda 行, 列: 列 == "C区" and "合计" not in 行, None, True)]
+
+    def 截了():
+        w.grab().save(str(到 / f"{名}_{标}.png"))
+        张们.append(f"{名}_{标}.png")
+
+    w = 窗口.主窗口()
+    w.setAttribute(Qt.WA_DontShowOnScreen)
+    w.resize(*宽)
+    w.show()
+    等(0.4)
+    try:
+        for 名, 结果, 挑, 换, 倒着 in 场景:
+            m = 消息("待增值", 结果)
+            项 = 成项("待增值", "待增值", 结果, m)
+            w._显示结果([项])
+            w.运行页.列表.setCurrentRow(0)
+            等(0.5)
+            for 标, 尺 in (("宽", 宽), ("窄", 窄)):
+                w.resize(*尺)
+                等(0.4)
+                表 = next((x for x in w.findChildren(数量表格) if x.isVisible() and x.卡片们), None)
+                检查("截图", f"{名}_{标}：数量表里挂上了小卡片", 表 is not None)
+                if 表 is None:
+                    continue
+                键 = _卡键(表, 挑, 倒着)
+                检查("截图", f"{名}_{标}：找到了要悬浮的那一格", 键 is not None, list(表.卡片们)[:6])
+                if 键 is None:
+                    continue
+                数据 = None
+                if 换 == "没查到":           # 那一格没查到时的样子（用真的出卡函数算，不手写字）
+                    行名, 列名 = 键.split("|", 1)
+                    数据 = 待处理._一格卡片(行名, 列名, "失败", "失败", "失败", "合箱增值", "单箱增值")
+                白框 = 表.parentWidget()
+                前 = (表.geometry(), _位置(表, w), _位置(白框, w), 表.sizeHint())
+                卡 = _出一格卡(表, 键, 数据)
+                等(0.15)
+                后 = (表.geometry(), _位置(表, w), _位置(白框, w), 表.sizeHint())
+                检查("截图", f"{名}_{标}：卡片出现前后，表格和白框的位置、大小一个像素都不变", 前 == 后, (前, 后))
+                检查("截图", f"{名}_{标}：小卡片出来了", 卡 is not None and 卡.isVisible())
+                if 卡 is not None and 卡.isVisible():
+                    x, y, 宽2, 高2 = _位置(卡, w)
+                    在窗内 = x >= 0 and y >= 0 and x + 宽2 <= w.width() and y + 高2 <= w.height()
+                    检查("截图", f"{名}_{标}：小卡片完整在窗口里（没跑到窗口外面被切掉）",
+                         在窗内, (x, y, 宽2, 高2, w.width(), w.height()))
+                    检查("截图", f"{名}_{标}：小卡片挡不到鼠标（鼠标穿过去，照旧能点格子）",
+                         卡.testAttribute(Qt.WA_TransparentForMouseEvents))
+                截了()
+                检查("截图", f"{名}_{标}：没有左右滚动", not 横滚(w), 横滚(w))
+                表._藏卡()
+        # 样板页：新零件那一节（要滚下去才看得到）
+        w.去(4)
+        等(0.4)
+        卡们 = [x for x in w.findChildren(格子卡片)]
+        检查("截图", "界面样板里有新的“格子小卡片”零件", len(卡们) >= 3, len(卡们))
+        滚区 = next((x for x in w.样板页.findChildren(QAbstractScrollArea)), None)
+        if 滚区 and 卡们:
+            滚区.ensureWidgetVisible(卡们[0])
+            等(0.3)
+        for 标, 尺 in (("宽", 宽), ("窄", 窄)):
+            w.resize(*尺)
+            等(0.4)
+            if 滚区 and 卡们:
+                滚区.ensureWidgetVisible(卡们[0])
+                等(0.3)
+            名 = "17_界面样板_格子小卡片"
+            截了()
+            检查("截图", f"{名}_{标}：没有左右滚动", not 横滚(w), 横滚(w))
+    finally:
+        w.close()
+    return 张们
+
+
 # =================== 4. 对比 ===================
 _表 = bytes(0 if i <= 24 else 1 for i in range(256))
 
@@ -795,6 +934,7 @@ def main():
         截图夹 = 结果夹 / "截图"
         张们 = 截全部(截图夹)
         张们 += 截变化(截图夹)      # 变化图日常也截（2026-11-01 起）：基准 = 48 张原有 + 14 张变化图
+        张们 += 截卡片(截图夹)      # 格子小卡片（2026-11-01 起）：12 张
         if 更新:
             shutil.rmtree(基准截图, ignore_errors=True)
             shutil.copytree(截图夹, 基准截图)

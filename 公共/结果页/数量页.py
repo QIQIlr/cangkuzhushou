@@ -2,11 +2,12 @@
 #   从 公共\结果页.py 拆出来的（2026-10-31，纯搬家，函数体一个字没改）。
 
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QFrame, QHBoxLayout, QPushButton, QStyledItemDelegate, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
+from 公共.界面.格子卡片 import 格子卡片
 from 公共.结果页.零件 import _色, _白块, _组名, 色
 
 
@@ -43,6 +44,116 @@ class 数量表格(QTableWidget):
         self.setShowGrid(False)              # 规范：没有竖线格子，只有行间细线
         self.setItemDelegate(_表格行画法(self))
         self.itemDoubleClicked.connect(lambda _: self.复制())
+        # 格子小卡片（2026-11-01，待增值的合箱 / 单箱）：没有 卡片们 时一行新代码都不执行
+        self.卡片们 = {}
+        self._卡 = None
+        self._待显示 = None
+        self._计时 = QTimer(self)
+        self._计时.setSingleShot(True)
+        self._计时.setInterval(400)          # 停 400 毫秒才出来（太灵敏会挡手）
+        self._计时.timeout.connect(self._显示待显示)
+
+    # ---------------- 格子小卡片 ----------------
+    def 设卡片(self, 卡片们):
+        self.卡片们 = dict(卡片们 or {})
+        self.setMouseTracking(bool(self.卡片们) or self.hasMouseTracking())
+        if not self.卡片们:
+            self._藏卡()
+
+    def _格里名(self, 项):
+        if 项 is None:
+            return None
+        行 = self.item(项.row(), 0)
+        头 = self.horizontalHeaderItem(项.column())
+        if 行 is None or 头 is None:
+            return None
+        名 = 行.text().replace("（这天及以前都是 0）", "")   # 起点行界面加了这几个字，查键要用原来的名字
+        return f"{名}|{头.text()}"
+
+    def _那一格(self, 点):
+        项 = self.itemAt(点)
+        键 = self._格里名(项)
+        return 键, (self.卡片们.get(键) if 键 else None)
+
+    def _藏卡(self):
+        self._计时.stop()
+        self._待显示 = None
+        if self._卡 is not None:
+            self._卡.hide()
+
+    def _显示待显示(self):
+        if self._待显示 is None:
+            return
+        项, 卡数据 = self._待显示
+        self._待显示 = None
+        self._出卡(项, 卡数据)
+
+    def _出卡(self, 项, 数据):
+        if self._卡 is None:
+            self._卡 = 格子卡片(数据, self.window())
+        else:
+            self._卡.设(数据)
+            self._卡.setParent(self.window())
+        self._卡.show()
+        矩形 = self.visualItemRect(项)
+        全局 = self.viewport().mapToGlobal(QPoint(矩形.x(), 矩形.y()))
+        self._卡.设位置(QRect(全局, 矩形.size()), self.window())
+        self._卡.raise_()
+
+    def mouseMoveEvent(self, 事件):
+        super().mouseMoveEvent(事件)
+        if not self.卡片们:
+            return
+        键, 数据 = self._那一格(事件.position().toPoint())
+        if 数据 is None:
+            self._藏卡()
+            return
+        if self._卡 is not None and self._卡.isVisible() and self._待显示 is None:
+            if self._卡.property("格") == 键:      # 同一格：已经显示了，不用再来一次
+                return
+        项 = self.itemAt(事件.position().toPoint())
+        self._待显示 = (项, 数据)
+        if self._卡 is not None:
+            self._卡.setProperty("格", 键)
+        self._计时.start()
+
+    def mousePressEvent(self, 事件):
+        super().mousePressEvent(事件)          # 选中一格照旧
+        if not self.卡片们 or 事件.button() != Qt.LeftButton:
+            return
+        项 = self.itemAt(事件.position().toPoint())
+        键, 数据 = self._那一格(事件.position().toPoint())
+        if 数据 is not None:
+            self._计时.stop()
+            self._待显示 = None
+            self._出卡(项, 数据)
+            if self._卡 is not None:
+                self._卡.setProperty("格", 键)
+
+    def leaveEvent(self, 事件):
+        super().leaveEvent(事件)
+        self._藏卡()
+
+    def wheelEvent(self, 事件):
+        self._藏卡()
+        super().wheelEvent(事件)
+
+    def scrollContentsBy(self, *a):
+        self._藏卡()
+        super().scrollContentsBy(*a)
+
+    def hideEvent(self, 事件):
+        self._藏卡()
+        super().hideEvent(事件)
+
+    def resizeEvent(self, 事件):
+        self._藏卡()
+        super().resizeEvent(事件)
+
+    def keyPressEvent(self, 事件):
+        if 事件.key() == Qt.Key_Escape:
+            self._藏卡()
+        super().keyPressEvent(事件)
 
     def 填(self, 列名, 行们, 起点=False, 变化=False, 提示们=None):
         """变化=True：画「和上次比」「今天各次」的格子（2026-11-01）。
@@ -221,6 +332,8 @@ class 表块(QWidget):
         self.格.自然宽, self.格.自然高 = max(宽们), max(高们)
         self.统一列 = None
         self.格.拉到(0)
+        if 表.get("格卡片们"):          # 可选键（2026-11-01，待增值）：没有这个键的模块一个动作都不做
+            self.格.设卡片(表["格卡片们"])
         self.卡 = _白块(self.格, 8)
         层.addWidget(self.卡, 0, Qt.AlignLeft | Qt.AlignTop)
         层.addStretch(1)
