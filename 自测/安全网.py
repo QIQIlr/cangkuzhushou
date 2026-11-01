@@ -300,23 +300,24 @@ def 假长品名项():
 def _面单页逐条点开(项):
     """检查 A 用：画出结果页，点开每一条任务。返回 (错误数, 缺内容物的行们, 折叠点开变收起的行们, 折叠点开没变的行们)。"""
     from 公共.结果页.面单页 import 面单页 as 面单页类
-    页 = 结果页.一页(项, QStatusBar(), lambda *a: None)
-    页.setAttribute(Qt.WA_DontShowOnScreen)
-    页.resize(1000, 700)
-    页.show()
-    等(0.05)
-    面单 = next((x for x in 页.findChildren(面单页类)), None)
     错误们 = []
 
     def 收(e类型, e值, tb):
         错误们.append("".join(traceback.format_exception(e类型, e值, tb)))
     原钩 = sys.excepthook
-    sys.excepthook = 收
+    sys.excepthook = 收      # 报错发生在信号调用的槽里（含建页时先点开的第 0 条），不一定抛回外面，所以挂钩子兜底
     缺, 折好, 折坏 = [], [], []
+    页 = None
     try:
+        页 = 结果页.一页(项, QStatusBar(), lambda *a: None)
+        页.setAttribute(Qt.WA_DontShowOnScreen)
+        页.resize(1000, 700)
+        页.show()
+        等(0.05)
+        面单 = next((x for x in 页.findChildren(面单页类)), None)
         for i in range(面单.列表.count()):
             try:
-                面单.列表.setCurrentRow(i)     # 报错在信号调用的槽里，可能不抛回这里，所以另挂 excepthook 兜底
+                面单.列表.setCurrentRow(i)
             except Exception:
                 错误们.append(traceback.format_exc())
             等(0.01)
@@ -331,7 +332,8 @@ def _面单页逐条点开(项):
                 (折好 if "收起" in 钮.text() else 折坏).append(i)
     finally:
         sys.excepthook = 原钩
-        页.close()
+        if 页 is not None:
+            页.close()
     return len(错误们), 缺, 折好, 折坏
 
 
