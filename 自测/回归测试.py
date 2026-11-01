@@ -978,9 +978,15 @@ def 测_查询间隔共用():
         def wait_for(self, **_):
             pass
 
+        def evaluate(self, *_):
+            return getattr(self, "提示条", "")     # 页面上残留的提示条（危险检查只读这个）
+
     class 假记录:
-        def 写(self, *_):
-            pass
+        def __init__(self):
+            self.行们 = []
+
+        def 写(self, 文字):
+            self.行们.append(str(文字))
     try:
         页 = 假页面()
         总 = {"taskCategories": "4", "taskStatus": "0", "shelvesRegionNum": "D", "日期参数": "createTime", "日期范围": None}
@@ -1012,6 +1018,25 @@ def 测_查询间隔共用():
         import inspect
         from 公共 import 运行
         检查("每次运行开始时都恢复（运行.py 调了 新的一次运行）", "任务查询.新的一次运行()" in inspect.getsource(运行.运行模块们))
+
+        # 2026-11-01 复审问题 1：普通“点击次数过多”照旧等待重查；提示条残留也不能让危险检查抢先停下
+        from 公共.错误 import 自动化错误, WMS提示
+        页.提示条 = "点击次数过多"
+        回答们[:] = [100010, 0]
+        记 = 假记录()
+        器2 = 查.计数查询器(页, 记)
+        页.期望 = 总
+        等过.clear()
+        数 = 器2.查(总)
+        检查("提示条残留“点击次数过多”+ 先回 100010 再回 0：返回数字，等 3 秒重查，不报错",
+             数 == 5 and 3 in 等过 and any("等 3 秒后重查（第 1 次）" in 行 for 行 in 记.行们)
+             and "点击次数过多" not in 查.危险词, (数, 等过, 记.行们))
+        页.提示条 = "访问频繁"
+        try:
+            器2._危险("")
+            检查("页面提示“访问频繁”：仍然立刻停（WMS提示）", False, "本该停下却通过了")
+        except 自动化错误 as e:
+            检查("页面提示“访问频繁”：仍然立刻停（WMS提示）", e.类型 == WMS提示, e.原因)
     finally:
         查.time.time, 查.time.sleep = 原
         查.新的一次运行()
